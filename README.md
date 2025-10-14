@@ -1,6 +1,6 @@
 # 📘 Projeto: Treinamento e Análise de Classificação com YOLOv8
 
-Este repositório contém o notebook **`cap1_neural_yolo_academico_final_CORRIGIDO_TRADUZIDO_v2.ipynb`**, desenvolvido com o objetivo de demonstrar e documentar o processo de **treinamento, validação e teste** de um modelo de **classificação de imagens** utilizando a arquitetura **YOLOv8 (You Only Look Once)**.
+Este repositório contém o notebook **`Mauricio_Jose_Ferlin_Tonnera_rm565469_fase6.ipynb`**, desenvolvido com o objetivo de demonstrar e documentar o processo de **treinamento, validação e teste** de um modelo de **classificação de imagens** utilizando a arquitetura **YOLOv8 (You Only Look Once)**.
 
 ---
 
