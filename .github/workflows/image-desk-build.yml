@@ -1,0 +1,60 @@
+name: Build Image Desk native apps
+
+on:
+  push:
+    branches:
+      - imagedesk-native-build
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build Windows executable
+        shell: pwsh
+        run: ./image-desk/build_windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImageDesk-Windows-x64
+          path: image-desk/dist/ImageDesk.exe
+          if-no-files-found: error
+
+  mac-intel:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build Intel Mac app
+        run: ./image-desk/build_mac.sh
+      - name: Make disk image
+        run: hdiutil create -volname 'Image Desk' -srcfolder image-desk/dist/ImageDesk.app -ov -format UDZO image-desk/dist/ImageDesk-macOS-Intel.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImageDesk-macOS-Intel
+          path: image-desk/dist/ImageDesk-macOS-Intel.dmg
+          if-no-files-found: error
+
+  mac-apple-silicon:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build Apple Silicon Mac app
+        run: ./image-desk/build_mac.sh
+      - name: Make disk image
+        run: hdiutil create -volname 'Image Desk' -srcfolder image-desk/dist/ImageDesk.app -ov -format UDZO image-desk/dist/ImageDesk-macOS-Apple-Silicon.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImageDesk-macOS-Apple-Silicon
+          path: image-desk/dist/ImageDesk-macOS-Apple-Silicon.dmg
+          if-no-files-found: error
