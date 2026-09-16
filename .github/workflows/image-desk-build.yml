@@ -1,4 +1,4 @@
-name: Build Image Desk native apps
+name: Build Image Desk 2.0 native apps
 
 on:
   push:
@@ -19,9 +19,11 @@ jobs:
       - name: Build Windows executable
         shell: pwsh
         run: ./image-desk/build_windows.ps1
+      - name: Verify packaged video and GIF playback
+        run: python image-desk/verify_build.py
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-Windows-x64
+          name: ImageDesk-2.0-Windows-x64
           path: image-desk/dist/ImageDesk.exe
           if-no-files-found: error
 
@@ -34,12 +36,14 @@ jobs:
           python-version: '3.12'
       - name: Build Intel Mac app
         run: ./image-desk/build_mac.sh
+      - name: Verify packaged video and GIF playback
+        run: python image-desk/verify_build.py
       - name: Make disk image
-        run: hdiutil create -volname 'Image Desk' -srcfolder image-desk/dist/ImageDesk.app -ov -format UDZO image-desk/dist/ImageDesk-macOS-Intel.dmg
+        run: ./image-desk/package_mac.sh Intel
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-macOS-Intel
-          path: image-desk/dist/ImageDesk-macOS-Intel.dmg
+          name: ImageDesk-2.0-macOS-Intel
+          path: image-desk/dist/ImageDesk-2.0-macOS-Intel.dmg
           if-no-files-found: error
 
   mac-apple-silicon:
@@ -51,10 +55,12 @@ jobs:
           python-version: '3.12'
       - name: Build Apple Silicon Mac app
         run: ./image-desk/build_mac.sh
+      - name: Verify packaged video and GIF playback
+        run: python image-desk/verify_build.py
       - name: Make disk image
-        run: hdiutil create -volname 'Image Desk' -srcfolder image-desk/dist/ImageDesk.app -ov -format UDZO image-desk/dist/ImageDesk-macOS-Apple-Silicon.dmg
+        run: ./image-desk/package_mac.sh Apple-Silicon
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-macOS-Apple-Silicon
-          path: image-desk/dist/ImageDesk-macOS-Apple-Silicon.dmg
+          name: ImageDesk-2.0-macOS-Apple-Silicon
+          path: image-desk/dist/ImageDesk-2.0-macOS-Apple-Silicon.dmg
           if-no-files-found: error

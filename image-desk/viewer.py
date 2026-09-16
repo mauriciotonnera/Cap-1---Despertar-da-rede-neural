@@ -1,4 +1,4 @@
-"""Image Desk: a two-screen image viewer built with PySide6."""
+"""Image Desk 2.0: images, video and animated GIFs on two screens."""
 
 from __future__ import annotations
 
@@ -19,14 +19,23 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
+if __package__:
+    from .playback import Playback, VIDEO_SUFFIXES, clock_text
+else:
+    from playback import Playback, VIDEO_SUFFIXES, clock_text
+
 
 IMAGE_FILTER = "Images (*.jpg *.jpeg *.png *.bmp *.gif *.tif *.tiff *.webp *.ico);;All files (*)"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".ico"}
+MEDIA_SUFFIXES = IMAGE_SUFFIXES | VIDEO_SUFFIXES
+MEDIA_FILTER = ("Images and video (*.jpg *.jpeg *.png *.bmp *.gif *.tif *.tiff *.webp *.ico *.mp4 *.mov *.m4v *.avi *.mkv *.webm);;"
+                "Video (*.mp4 *.mov *.m4v *.avi *.mkv *.webm);;" + IMAGE_FILTER)
 
 
 def readable_size(num_bytes: int) -> str:
@@ -97,7 +106,11 @@ class PresentationWindow(QWidget):
         key = event.key()
         if key == Qt.Key.Key_Escape:
             self.close()
-        elif key in (Qt.Key.Key_Right, Qt.Key.Key_Space, Qt.Key.Key_PageDown):
+        elif key == Qt.Key.Key_Space:
+            self.controller.space_pressed()
+        elif key == Qt.Key.Key_F11:
+            self.close()
+        elif key in (Qt.Key.Key_Right, Qt.Key.Key_PageDown):
             self.controller.step_image(1)
         elif key in (Qt.Key.Key_Left, Qt.Key.Key_PageUp):
             self.controller.step_image(-1)
@@ -120,8 +133,14 @@ class ViewerWindow(QMainWindow):
         self.image: QPixmap | None = None
         self.presentation: PresentationWindow | None = None
         self.presentation_screen = None
+        self.playback = Playback(self)
+        self._seeking = False
 
         self.make_interface()
+        self.playback.frameReady.connect(self.show_frame)
+        self.playback.changed.connect(self.update_playback_controls)
+        self.playback.metadataChanged.connect(self.set_info)
+        self.playback.failed.connect(self.playback_error)
         self.install_actions()
         self.refresh_screens()
         app = QGuiApplication.instance()
@@ -147,7 +166,7 @@ class ViewerWindow(QMainWindow):
         toolbar.addWidget(title)
         toolbar.addStretch()
 
-        self.open_button = QPushButton("Open image…")
+        self.open_button = QPushButton("Open media…")
         self.open_button.clicked.connect(self.open_dialog)
         toolbar.addWidget(self.open_button)
         self.previous_button = QPushButton("◀ Previous")
@@ -168,10 +187,58 @@ class ViewerWindow(QMainWindow):
         preview_layout.addWidget(caption)
         self.preview = ImageCanvas()
         preview_layout.addWidget(self.preview, 1)
-        self.placeholder = QLabel("Open an image to start")
+        self.placeholder = QLabel("Open an image or video to start")
+        self.placeholder.setWordWrap(True)
+        self.placeholder.setTextFormat(Qt.TextFormat.PlainText)
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.placeholder.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         preview_layout.addWidget(self.placeholder)
+        self.transport = QWidget()
+        transport_layout = QVBoxLayout(self.transport)
+        transport_layout.setContentsMargins(0, 8, 0, 0)
+        buttons = QHBoxLayout()
+        self.play_button = QPushButton("Pause")
+        self.play_button.clicked.connect(self.playback.toggle)
+        self.restart_button = QPushButton("Restart")
+        self.restart_button.clicked.connect(self.playback.restart)
+        self.repeat_combo = QComboBox()
+        self.repeat_combo.addItems(["Play once", "Loop"])
+        self.repeat_combo.setToolTip("Play once holds the last frame. Loop repeats the current file.")
+        self.repeat_combo.currentIndexChanged.connect(lambda index: self.playback.set_loop(index == 1))
+        buttons.addWidget(self.play_button)
+        buttons.addWidget(self.restart_button)
+        buttons.addStretch()
+        buttons.addWidget(self.repeat_combo)
+        transport_layout.addLayout(buttons)
+        timeline = QHBoxLayout()
+        self.seek_slider = QSlider(Qt.Orientation.Horizontal)
+        self.seek_slider.setTracking(False)
+        self.seek_slider.sliderPressed.connect(self.seek_started)
+        self.seek_slider.sliderReleased.connect(self.seek_finished)
+        self.seek_slider.valueChanged.connect(self.seek_value_changed)
+        self.time_label = QLabel("00:00 / 00:00")
+        timeline.addWidget(self.seek_slider, 1)
+        timeline.addWidget(self.time_label)
+        transport_layout.addLayout(timeline)
+        audio_row = QHBoxLayout()
+        self.playback_label = QLabel("Ready")
+        audio_row.addWidget(self.playback_label)
+        audio_row.addStretch()
+        self.volume_label = QLabel("Volume")
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setValue(80)
+        self.volume_slider.setMaximumWidth(100)
+        self.volume_slider.valueChanged.connect(lambda v: self.playback.audio.setVolume(v / 100))
+        self.mute_button = QPushButton("Mute")
+        self.mute_button.setCheckable(True)
+        self.mute_button.toggled.connect(self.change_mute)
+        audio_row.addWidget(self.volume_label)
+        audio_row.addWidget(self.volume_slider)
+        audio_row.addWidget(self.mute_button)
+        transport_layout.addLayout(audio_row)
+        preview_layout.addWidget(self.transport)
+        self.transport.hide()
         splitter.addWidget(preview_frame)
 
         details = QFrame()
@@ -191,7 +258,7 @@ class ViewerWindow(QMainWindow):
         info_layout.setSpacing(12)
         info_layout.setContentsMargins(0, 4, 0, 4)
         self.info_values: dict[str, QLabel] = {}
-        for heading in ("Name", "Folder", "Format", "Dimensions", "File size", "Last modified", "Color mode"):
+        for heading in ("Name", "Folder", "Format", "Dimensions", "File size", "Last modified", "Color mode", "Duration", "Frame rate", "Frames", "Codec"):
             block = QWidget()
             block_layout = QVBoxLayout(block)
             block_layout.setContentsMargins(0, 0, 0, 0)
@@ -200,6 +267,7 @@ class ViewerWindow(QMainWindow):
             field.setObjectName("field")
             value = QLabel("—")
             value.setObjectName("value")
+            value.setTextFormat(Qt.TextFormat.PlainText)
             value.setWordWrap(True)
             value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             block_layout.addWidget(field)
@@ -217,7 +285,7 @@ class ViewerWindow(QMainWindow):
         self.screen_combo = QComboBox()
         self.screen_combo.currentIndexChanged.connect(self.change_presentation_screen)
         details_layout.addWidget(self.screen_combo)
-        details_layout.addWidget(QLabel("Image sizing"))
+        details_layout.addWidget(QLabel("Media sizing"))
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["Fit", "Fill", "Actual size"])
         self.mode_combo.currentTextChanged.connect(self.change_mode)
@@ -226,7 +294,7 @@ class ViewerWindow(QMainWindow):
         self.fullscreen_button.setObjectName("primaryButton")
         self.fullscreen_button.clicked.connect(self.toggle_presentation)
         details_layout.addWidget(self.fullscreen_button)
-        hint = QLabel("Esc closes fullscreen • ← / → changes image")
+        hint = QLabel("Esc closes fullscreen • ← / → changes file\nSpace plays / pauses video and GIFs")
         hint.setObjectName("hint")
         hint.setWordWrap(True)
         details_layout.addWidget(hint)
@@ -234,7 +302,7 @@ class ViewerWindow(QMainWindow):
         splitter.setSizes([760, 340])
         shell.addWidget(splitter, 1)
 
-        self.statusBar().showMessage("Ready. Open an image or drop one onto the window.")
+        self.statusBar().showMessage("Ready. Open an image, GIF or video, or drop a file onto the window.")
         self.setAcceptDrops(True)
         self.update_controls()
         self.setStyleSheet("""
@@ -254,6 +322,9 @@ class ViewerWindow(QMainWindow):
             QPushButton#primaryButton { background: #4769d3; border-color: #5777de; font-weight: 700; }
             QPushButton#primaryButton:hover { background: #5879e3; }
             QComboBox QAbstractItemView { background: #253047; color: #eff3fd; }
+            QSlider::groove:horizontal { height: 5px; background: #364258; border-radius: 2px; }
+            QSlider::sub-page:horizontal { background: #6586ee; border-radius: 2px; }
+            QSlider::handle:horizontal { width: 12px; margin: -4px 0; background: #dce6ff; border-radius: 6px; }
             QStatusBar { background: #10141d; color: #9ba8bd; }
         """)
 
@@ -263,6 +334,7 @@ class ViewerWindow(QMainWindow):
             ("Next image", Qt.Key.Key_Right, lambda: self.step_image(1)),
             ("Previous image", Qt.Key.Key_Left, lambda: self.step_image(-1)),
             ("Fullscreen", Qt.Key.Key_F11, self.toggle_presentation),
+            ("Play / pause", Qt.Key.Key_Space, self.space_pressed),
         ):
             action = QAction(text, self)
             action.setShortcut(shortcut)
@@ -321,16 +393,44 @@ class ViewerWindow(QMainWindow):
 
     def open_dialog(self) -> None:
         start = str(self.current_path.parent) if self.current_path else str(Path.home())
-        filename, _filter = QFileDialog.getOpenFileName(self, "Choose an image", start, IMAGE_FILTER)
+        filename, _filter = QFileDialog.getOpenFileName(self, "Choose an image or video", start, MEDIA_FILTER)
         if filename:
             self.load_image(Path(filename))
 
     def load_image(self, path: Path, quiet: bool = False) -> bool:
+        self._seeking = False
         path = path.expanduser().resolve()
         if not path.is_file():
             if not quiet:
                 QMessageBox.warning(self, "Cannot open file", f"File not found:\n{path}")
             return False
+
+        if path.suffix.lower() in VIDEO_SUFFIXES or path.suffix.lower() == ".gif":
+            try:
+                stat = path.stat()
+                self.current_path = path
+                self.image = None
+                self.preview.set_image(None)
+                if self.presentation:
+                    self.presentation.canvas.set_image(None)
+                self.set_info({key: "—" for key in self.info_values})
+                self.set_info({"Name": path.name, "Folder": str(path.parent),
+                               "Format": path.suffix[1:].upper(), "File size": readable_size(stat.st_size),
+                               "Last modified": format_mtime(stat.st_mtime)})
+                self.placeholder.setText("Loading media…")
+                self.placeholder.show()
+                if path.suffix.lower() == ".gif":
+                    self.playback.load_gif(path)
+                else:
+                    self.playback.load_video(path)
+                self.setWindowTitle(f"Image Desk — {path.name}")
+                self.statusBar().showMessage(f"Opened {path.name}", 5000)
+                self.update_controls()
+                return True
+            except (OSError, ValueError) as error:
+                self.playback.clear()
+                self.playback_error(str(error))
+                return False
 
         reader = QImageReader(str(path))
         reader.setAutoTransform(True)  # Respect camera EXIF orientation on the main and fullscreen views.
@@ -346,14 +446,15 @@ class ViewerWindow(QMainWindow):
                 QMessageBox.warning(self, "Cannot open image", f"Could not display this image:\n{path}")
             return False
 
+        try:
+            stat = path.stat()
+        except OSError as error:
+            if not quiet:
+                QMessageBox.warning(self, "Cannot open file", str(error))
+            return False
+        self.playback.clear()
         self.current_path = path
-        self.image = pixmap
-        self.preview.set_image(pixmap)
-        self.placeholder.hide()
-        if self.presentation:
-            self.presentation.canvas.set_image(pixmap)
-
-        stat = path.stat()
+        self.show_frame(decoded)
         file_format = bytes(reader.format()).decode("ascii", "replace").upper() or path.suffix[1:].upper()
         file_format = {"JPG": "JPEG", "TIF": "TIFF"}.get(file_format, file_format)
         values = {
@@ -364,20 +465,80 @@ class ViewerWindow(QMainWindow):
             "File size": readable_size(stat.st_size),
             "Last modified": format_mtime(stat.st_mtime),
             "Color mode": "With transparency" if decoded.hasAlphaChannel() else "Opaque",
+            "Duration": "—", "Frame rate": "—", "Frames": "—", "Codec": "—",
         }
-        for label, value in values.items():
-            self.info_values[label].setText(value)
+        self.set_info(values)
         self.setWindowTitle(f"Image Desk — {path.name}")
         self.statusBar().showMessage(f"Showing {path.name}", 5000)
         self.update_controls()
         return True
+
+    def show_frame(self, frame):
+        self.image = QPixmap.fromImage(frame)
+        self.preview.set_image(self.image)
+        if self.presentation:
+            self.presentation.canvas.set_image(self.image)
+        self.placeholder.hide()
+
+    def set_info(self, values):
+        for label, value in values.items():
+            if label in self.info_values:
+                self.info_values[label].setText(value)
+
+    def playback_error(self, text):
+        self.placeholder.setText(f"Cannot play this file: {text}")
+        self.placeholder.show()
+        self.statusBar().showMessage(f"Playback error: {text}")
+        self.update_controls()
+
+    def space_pressed(self):
+        if self.playback.kind in ("video", "gif"):
+            self.playback.toggle()
+        else:
+            self.step_image(1)
+
+    def change_mute(self, muted):
+        self.playback.audio.setMuted(muted)
+        self.mute_button.setText("Unmute" if muted else "Mute")
+
+    def seek_started(self):
+        self._seeking = True
+
+    def seek_finished(self):
+        self._seeking = False
+        self.playback.seek(self.seek_slider.value())
+
+    def seek_value_changed(self, value):
+        if not self._seeking:
+            self.playback.seek(value)
+
+    def update_playback_controls(self):
+        p = self.playback
+        self.transport.setVisible(p.kind in ("video", "gif"))
+        self.play_button.setText("Pause" if p.playing else "Play")
+        self.play_button.setEnabled(not p.error)
+        self.restart_button.setEnabled(not p.error)
+        self.seek_slider.setEnabled(p.seekable and not p.error)
+        self.playback_label.setText("Cannot play" if p.error else "Finished" if p.ended else "Playing" if p.playing else "Paused")
+        self.seek_slider.blockSignals(True)
+        if p.kind == "gif":
+            self.seek_slider.setRange(0, max(0, p.frame_count - 1))
+            self.time_label.setText(f"Frame {p.position + 1} / {p.frame_count}")
+        else:
+            self.seek_slider.setRange(0, min(p.duration, 2147483647))
+            self.time_label.setText(f"{clock_text(p.position)} / {clock_text(p.duration)}")
+        if not self._seeking:
+            self.seek_slider.setValue(p.position)
+        self.seek_slider.blockSignals(False)
+        for widget in (self.volume_label, self.volume_slider, self.mute_button):
+            widget.setVisible(p.kind == "video")
 
     def sibling_images(self) -> list[Path]:
         if not self.current_path:
             return []
         try:
             return sorted((p for p in self.current_path.parent.iterdir()
-                           if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES),
+                           if p.is_file() and p.suffix.lower() in MEDIA_SUFFIXES),
                           key=lambda p: p.name.casefold())
         except OSError:
             return []
@@ -401,7 +562,7 @@ class ViewerWindow(QMainWindow):
         if self.presentation:
             self.presentation.close()
             return
-        if not self.image:
+        if not self.current_path:
             return
         screen = self.screen_combo.currentData()
         if screen is None or screen not in QGuiApplication.screens():
@@ -431,7 +592,7 @@ class ViewerWindow(QMainWindow):
         self.update_controls()
 
     def update_controls(self) -> None:
-        has_image = self.image is not None
+        has_image = self.current_path is not None
         self.previous_button.setEnabled(has_image)
         self.next_button.setEnabled(has_image)
         self.fullscreen_button.setEnabled(has_image and self.screen_combo.count() > 0)
@@ -449,14 +610,19 @@ class ViewerWindow(QMainWindow):
                 return
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        self.playback.clear()
         if self.presentation:
             self.presentation.close()
         super().closeEvent(event)
 
 
 def main() -> int:
+    if len(sys.argv) == 3 and sys.argv[1] == "--self-test":
+        from smoke_test import run
+        return run(ViewerWindow, sys.argv[2])
     app = QApplication(sys.argv)
     app.setApplicationName("Image Desk")
+    app.setApplicationVersion("2.0")
     initial = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     window = ViewerWindow(initial)
     window.show()

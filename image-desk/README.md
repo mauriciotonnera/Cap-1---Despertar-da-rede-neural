@@ -1,43 +1,46 @@
-# Image Desk
+# Image Desk 2.0
 
-Image Desk shows an image and its file information in a control window on the computer's main display. A second, borderless fullscreen window shows just the image on the selected display. It works on Windows, macOS, and Linux with Python 3.10 or newer and PySide6.
+Image Desk keeps a preview and file information on your main display, with a clean fullscreen view on a selected display. Version 2.0 keeps the original interface and adds video and animated GIF playback.
 
-## Install and run
+## Use the app
 
-1. Install Python 3.10+ from [python.org](https://www.python.org/downloads/). On Windows, check **Add Python to PATH** if offered.
-2. Open a terminal in this folder and install the dependency:
+Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 2.0 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
 
-   ```sh
-   python -m pip install -r requirements.txt
-   ```
+- Click **Open media…** or drop a file onto the window. Images, MP4, MOV and animated GIF files use the same preview and file-information panel.
+- Videos and animated GIFs start playing when opened. **Play once** stops and holds the final frame. **Loop** repeats the current file until you pause it or open another file. This choice also overrides the loop count embedded in a GIF and stays selected as you change files during the session.
+- Use **Play / Pause**, **Restart**, and the timeline below the preview. The GIF timeline shows frame numbers. Video includes a time display, volume slider and mute control.
+- Choose the presentation display and click **Show fullscreen**. The secondary display is selected automatically when available. Opening or closing fullscreen does not restart playback: both windows receive frames from the same player, and audio plays once through the system output. To use HDMI audio, select that output in your computer's sound settings.
+- **Fit**, **Fill** and **Actual size** control the fullscreen presentation. Fit shows the whole frame; Fill crops to the display. Actual size uses one media pixel per logical screen pixel.
+- The file panel shows file details and dimensions, plus duration, frame rate and codec when available for video, or frame count for GIFs. Rotated video and EXIF image orientation are respected.
+- Previous and Next move through supported media in the current folder. A disconnected presentation display closes fullscreen safely.
 
-   On macOS/Linux, use `python3` in place of `python` if needed.
+Keyboard: **Ctrl+O** (Windows) or **Command+O** (Mac) opens a file; **F11** toggles fullscreen; **Esc** closes fullscreen; **Left / Right** changes files. **Space** plays or pauses video/GIF content and advances to the next file for still images.
 
-3. Start the program:
+## Supported media
 
-   ```sh
-   python viewer.py
-   ```
+Still images include JPEG, PNG, BMP, TIFF, WebP and ICO. GIF files play their animation. Video extensions include MP4, MOV, M4V, AVI, MKV and WebM. Containers can hold different codecs; playback depends on whether the bundled Qt/FFmpeg backend can decode that file's codec. Unsupported or damaged videos show a playback error and can be replaced by opening another file.
 
-   You can also pass a path, for example `python viewer.py "photo.jpg"`. After installing the dependency, Windows users can double-click `launch_windows.bat` and macOS users can double-click `launch_mac.command` (allow the script to run if macOS asks).
+The packaged playback checks exercise H.264/AAC MP4, ProRes MOV, rotated MOV and animated GIFs, including looping, last-frame hold, seeking, fullscreen frame sharing and recovery from an invalid file. These checks do not replace testing with physical monitors and audio equipment. Very large images and high-resolution video depend on the computer's available memory and decoding performance.
 
-## Controls
+## Run from source
 
-- **Open image…** or drag an image onto the window. The right panel shows the name, folder, format, dimensions, file size, modification time, and transparency.
-- Choose a display. When two displays are connected, the secondary display is chosen automatically. A single-display computer can also show fullscreen on its only display.
-- Choose **Fit** to see the entire image, **Fill** to crop it to the screen, or **Actual size** to show one image pixel per logical screen pixel.
-- Click **Show fullscreen** or press **F11**. Press **Esc** in fullscreen to return. Use the left and right arrow keys to move through images in the same folder; the preview and fullscreen window stay synchronized.
-- If a selected display disconnects, fullscreen closes. You can change the selected display while fullscreen is running.
+Use Python 3.10 or newer:
 
-The viewer uses Qt's image decoders. Typical installations support JPEG, PNG, BMP, GIF, TIFF, WebP, and ICO; animated files display their first frame. Very large files depend on available memory and Qt's image allocation limit. Camera orientation stored in EXIF is applied automatically.
+```sh
+python -m pip install -r requirements.txt
+python viewer.py
+```
 
-## Build a standalone Windows or Mac app
+Use `python3` on macOS/Linux if needed. An optional file argument opens that file immediately, for example `python viewer.py "clip.mov"`. Keep `viewer.py` and `playback.py` together. `playback.py` owns the single playback clock shared by the preview and fullscreen windows.
 
-The build scripts install their own temporary Python environment. The resulting app does **not** require Python on the computer where you run it.
+## Build standalone apps
 
-- On Windows, open PowerShell in this folder and run `powershell -ExecutionPolicy Bypass -File .\build_windows.ps1`. The finished app is `dist\ImageDesk.exe`.
-- On macOS, open Terminal in this folder and run `./build_mac.sh`. The finished app is `dist/ImageDesk.app`. This produces a build for the Mac's current processor (Intel or Apple Silicon).
+The build scripts install pinned PySide6 and PyInstaller dependencies in their own `.build-venv`.
 
-For cloud builds, put the **contents of this folder** at the root of a GitHub repository, open **Actions → Build Image Desk desktop apps → Run workflow**, then download the Windows, Intel Mac, or Apple Silicon Mac build from that run's **Artifacts**. Each artifact download is a ZIP. Unzip the Windows artifact to get the `.exe`. Unzip a Mac artifact to get a `.dmg` containing the `.app`.
+- Windows: run `powershell -ExecutionPolicy Bypass -File .\build_windows.ps1`. Output: `dist\ImageDesk.exe`.
+- Mac: run `./build_mac.sh`. Output: `dist/ImageDesk.app`, for the current Mac's processor. Run `./package_mac.sh Intel` or `./package_mac.sh Apple-Silicon` to create a DMG with the app and an Applications shortcut.
+- Run `python verify_build.py` after building to launch the actual packaged executable and check playback. The report is written to `dist/playback-check.json`. `test_media.json` contains small synthetic test clips bundled for these checks.
 
-These personal builds are not signed with a commercial developer certificate or notarized by Apple. If a downloaded Mac app is blocked, use Finder's **Open** option for it. For wider distribution, sign and notarize the Mac app with your Apple Developer credentials.
+The repository's `.github/workflows/image-desk-build.yml` builds Windows x64, Intel Mac and Apple Silicon Mac on pushes to the dedicated `imagedesk-native-build` branch. Every build runs the packaged playback checks before uploading its artifact; Mac builds also verify the DMG and app layout.
+
+These personal builds are not signed with a commercial developer certificate or notarized by Apple. Operating-system security prompts may appear. For wider distribution, sign the Windows executable and sign and notarize the Mac app with the appropriate developer credentials.
