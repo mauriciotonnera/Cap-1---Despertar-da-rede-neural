@@ -23,7 +23,8 @@ def run_checks(window, root, wait, until, checks):
     assert c.active and not p.loop
     until(lambda: not c.active)
     assert seen == [0, 1, 2, 3, 4], seen
-    assert c.status == "Finished" and p.loop and window.current_path == root / "still.png"
+    assert c.status == "Finished" and p.loop and window.current_path == root / "still.png", (
+        c.status, p.loop, str(window.current_path), str(root / "still.png"))
     assert window.remaining_milliseconds() == 0
     checks.append("Mixed playlist advances in order, times stills, holds final item and restores clip-loop mode")
 

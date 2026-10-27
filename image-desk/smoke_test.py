@@ -51,7 +51,7 @@ def run(viewer_class, report_path):
     sys.excepthook = lambda kind, value, trace: callback_errors.append("".join(traceback.format_exception(kind, value, trace)))
     try:
         with tempfile.TemporaryDirectory(prefix="imagedesk-test-", ignore_cleanup_errors=True) as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()  # macOS /var aliases /private/var.
             fixtures = json.loads(Path(__file__).with_name("test_media.json").read_text())
             for name, encoded in fixtures.items():
                 (root / name).write_bytes(base64.b64decode(encoded))

@@ -48,7 +48,7 @@ The packaged playback checks exercise H.264/AAC MP4, ProRes MOV, rotated MOV and
 
 ## Run from source
 
-Use Python 3.10 or newer:
+Use Python 3.12 (the version used for the native builds):
 
 ```sh
 python -m pip install -r requirements.txt

@@ -1,7 +1,9 @@
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
-py -3 -m venv .build-venv
+# Use the Python selected on PATH (including actions/setup-python), rather than
+# the launcher's newest installed Python, which may exceed Qt's supported range.
+python -m venv .build-venv
 if ($LASTEXITCODE -ne 0) { throw 'Python environment creation failed' }
 $python = Join-Path $PSScriptRoot '.build-venv\Scripts\python.exe'
 & $python -m pip install --upgrade pip
