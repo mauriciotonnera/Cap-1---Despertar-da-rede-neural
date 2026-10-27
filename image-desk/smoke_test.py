@@ -4,6 +4,7 @@ import base64
 import json
 import tempfile
 import traceback
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QTimer
@@ -45,6 +46,9 @@ def run(viewer_class, report_path):
     p.frameReady.connect(lambda image: frames.append(image.size()))
     p.failed.connect(errors.append)
     report = {"success": False, "checks": checks}
+    callback_errors = []
+    previous_hook = sys.excepthook
+    sys.excepthook = lambda kind, value, trace: callback_errors.append("".join(traceback.format_exception(kind, value, trace)))
     try:
         with tempfile.TemporaryDirectory(prefix="imagedesk-test-", ignore_cleanup_errors=True) as directory:
             root = Path(directory)
@@ -142,6 +146,9 @@ def run(viewer_class, report_path):
             until(lambda: p.ended or p.error)
             assert not p.error
             checks.append("Corrupt-file error and recovery")
+            from presentation_test import run_checks
+            run_checks(window, root, wait, until, checks)
+            assert not callback_errors, callback_errors
             # Windows decoders can retain the file handle after EndOfMedia.
             p.clear()
             wait(50)
@@ -151,5 +158,9 @@ def run(viewer_class, report_path):
         report["decoder_errors"] = errors
     finally:
         window.close()
+        sys.excepthook = previous_hook
+        if callback_errors:
+            report["callback_errors"] = callback_errors
+            report["success"] = False
         Path(report_path).write_text(json.dumps(report, indent=2))
     return 0 if report["success"] else 1

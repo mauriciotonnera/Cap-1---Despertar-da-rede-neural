@@ -5,7 +5,7 @@ variant="$1"
 case "$variant" in Intel|Apple-Silicon) ;; *) exit 2 ;; esac
 stage=$(mktemp -d)
 mount_dir=$(mktemp -d)
-image_path="$(pwd)/dist/ImageDesk-2.0-macOS-${variant}.dmg"
+image_path="$(pwd)/dist/ImageDesk-3.0-macOS-${variant}.dmg"
 ditto dist/ImageDesk.app "$stage/ImageDesk.app"
 ln -s /Applications "$stage/Applications"
 hdiutil create -volname 'Image Desk' -srcfolder "$stage" -ov -format UDZO "$image_path"

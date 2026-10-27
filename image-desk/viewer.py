@@ -1,4 +1,4 @@
-"""Image Desk 2.0: images, video and animated GIFs on two screens."""
+"""Image Desk 3.0: media playlists and presentation control on two screens."""
 
 from __future__ import annotations
 
@@ -6,10 +6,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QRect, Qt
-from PySide6.QtGui import QAction, QGuiApplication, QImageReader, QKeySequence, QPainter, QPixmap
+from PySide6.QtCore import QPoint, QRect, Qt, QTimer
+from PySide6.QtGui import QAction, QColor, QGuiApplication, QImageReader, QKeySequence, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -27,8 +28,14 @@ from PySide6.QtWidgets import (
 
 if __package__:
     from .playback import Playback, VIDEO_SUFFIXES, clock_text
+    from .playlist import Playlist
+    from .playlist_panel import PlaylistPanel
+    from .session import read_session, write_session
 else:
     from playback import Playback, VIDEO_SUFFIXES, clock_text
+    from playlist import Playlist
+    from playlist_panel import PlaylistPanel
+    from session import read_session, write_session
 
 
 IMAGE_FILTER = "Images (*.jpg *.jpeg *.png *.bmp *.gif *.tif *.tiff *.webp *.ico);;All files (*)"
@@ -52,13 +59,15 @@ def format_mtime(timestamp: float) -> str:
 
 
 class ImageCanvas(QWidget):
-    """Paint a static image inside a window without changing its aspect ratio."""
+    """Paint a decoded frame, with optional presentation-only controls."""
 
     def __init__(self, background: str = "#141924", parent: QWidget | None = None):
         super().__init__(parent)
         self.pixmap: QPixmap | None = None
         self.mode = "Fit"
         self.background = background
+        self.blackout = False
+        self.countdown_text = ""
         self.setMinimumSize(160, 120)
 
     def set_image(self, pixmap: QPixmap | None) -> None:
@@ -69,8 +78,20 @@ class ImageCanvas(QWidget):
         self.mode = mode
         self.update()
 
+    def set_blackout(self, enabled):
+        self.blackout = enabled
+        self.update()
+
+    def set_countdown(self, text):
+        if self.countdown_text != text:
+            self.countdown_text = text
+            self.update()
+
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt method name
         painter = QPainter(self)
+        if self.blackout:
+            painter.fillRect(self.rect(), "#000000")
+            return
         painter.fillRect(self.rect(), self.background)
         if not self.pixmap or self.pixmap.isNull():
             return
@@ -89,6 +110,20 @@ class ImageCanvas(QWidget):
         target.moveCenter(bounds.center())
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         painter.drawPixmap(target, self.pixmap)
+        if self.countdown_text:
+            font = painter.font()
+            font.setPixelSize(max(18, min(48, self.height() // 22)))
+            font.setBold(True)
+            painter.setFont(font)
+            text_width = painter.fontMetrics().horizontalAdvance(self.countdown_text)
+            text_height = painter.fontMetrics().height()
+            badge = QRect(self.width() - text_width - 48, self.height() - text_height - 40,
+                          text_width + 24, text_height + 16)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 190))
+            painter.drawRoundedRect(badge, 6, 6)
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, self.countdown_text)
 
 
 class PresentationWindow(QWidget):
@@ -96,6 +131,7 @@ class PresentationWindow(QWidget):
         super().__init__(None, Qt.WindowType.Window)
         self.controller = controller
         self.setWindowTitle("Image Desk | Presentation")
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.canvas = ImageCanvas("#000000")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -108,6 +144,8 @@ class PresentationWindow(QWidget):
             self.close()
         elif key == Qt.Key.Key_Space:
             self.controller.space_pressed()
+        elif key == Qt.Key.Key_B:
+            self.controller.blackout_button.toggle()
         elif key == Qt.Key.Key_F11:
             self.close()
         elif key in (Qt.Key.Key_Right, Qt.Key.Key_PageDown):
@@ -126,14 +164,18 @@ class ViewerWindow(QMainWindow):
     def __init__(self, initial_file: Path | None = None):
         super().__init__()
         self.setWindowTitle("Image Desk")
-        self.setMinimumSize(820, 520)
-        self.resize(1100, 700)
+        self.setMinimumSize(940, 680)
+        self.resize(1180, 850)
 
         self.current_path: Path | None = None
         self.image: QPixmap | None = None
         self.presentation: PresentationWindow | None = None
         self.presentation_screen = None
         self.playback = Playback(self)
+        self.playlist = Playlist(self.playback, lambda path: self.load_image(
+            path, quiet=True, from_playlist=True), self)
+        self.session_path = None
+        self.blackout = False
         self._seeking = False
 
         self.make_interface()
@@ -141,6 +183,12 @@ class ViewerWindow(QMainWindow):
         self.playback.changed.connect(self.update_playback_controls)
         self.playback.metadataChanged.connect(self.set_info)
         self.playback.failed.connect(self.playback_error)
+        self.playlist.changed.connect(self.update_playback_controls)
+        self.playlist.notice.connect(lambda message: self.statusBar().showMessage(message, 10000))
+        self.countdown_timer = QTimer(self)
+        self.countdown_timer.setInterval(100)
+        self.countdown_timer.timeout.connect(self.update_countdown)
+        self.countdown_timer.start()
         self.install_actions()
         self.refresh_screens()
         app = QGuiApplication.instance()
@@ -149,7 +197,10 @@ class ViewerWindow(QMainWindow):
         app.primaryScreenChanged.connect(self.refresh_screens)
         self.move_to_primary()
         if initial_file:
-            self.load_image(initial_file)
+            if str(initial_file).lower().endswith(".imagedesk.json"):
+                self.open_session_file(initial_file)
+            else:
+                self.load_image(initial_file)
 
     def make_interface(self) -> None:
         root = QWidget()
@@ -175,6 +226,10 @@ class ViewerWindow(QMainWindow):
         self.next_button = QPushButton("Next ▶")
         self.next_button.clicked.connect(lambda: self.step_image(1))
         toolbar.addWidget(self.next_button)
+        self.playlist_button = QPushButton("Playlist")
+        self.playlist_button.setCheckable(True)
+        self.playlist_button.setChecked(True)
+        toolbar.addWidget(self.playlist_button)
         shell.addLayout(toolbar)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -198,9 +253,9 @@ class ViewerWindow(QMainWindow):
         transport_layout.setContentsMargins(0, 8, 0, 0)
         buttons = QHBoxLayout()
         self.play_button = QPushButton("Pause")
-        self.play_button.clicked.connect(self.playback.toggle)
+        self.play_button.clicked.connect(self.space_pressed)
         self.restart_button = QPushButton("Restart")
-        self.restart_button.clicked.connect(self.playback.restart)
+        self.restart_button.clicked.connect(self.restart_current)
         self.repeat_combo = QComboBox()
         self.repeat_combo.addItems(["Play once", "Loop"])
         self.repeat_combo.setToolTip("Play once holds the last frame. Loop repeats the current file.")
@@ -239,7 +294,17 @@ class ViewerWindow(QMainWindow):
         transport_layout.addLayout(audio_row)
         preview_layout.addWidget(self.transport)
         self.transport.hide()
-        splitter.addWidget(preview_frame)
+        self.left_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.left_splitter.setChildrenCollapsible(False)
+        self.left_splitter.addWidget(preview_frame)
+        self.playlist_panel = PlaylistPanel(self.playlist)
+        self.playlist_panel.addRequested.connect(self.add_playlist_dialog)
+        self.playlist_panel.openRequested.connect(self.open_session_dialog)
+        self.playlist_panel.saveRequested.connect(self.save_session_dialog)
+        self.playlist_button.toggled.connect(self.playlist_panel.setVisible)
+        self.left_splitter.addWidget(self.playlist_panel)
+        self.left_splitter.setSizes([510, 250])
+        splitter.addWidget(self.left_splitter)
 
         details = QFrame()
         details.setObjectName("details")
@@ -294,7 +359,25 @@ class ViewerWindow(QMainWindow):
         self.fullscreen_button.setObjectName("primaryButton")
         self.fullscreen_button.clicked.connect(self.toggle_presentation)
         details_layout.addWidget(self.fullscreen_button)
-        hint = QLabel("Esc closes fullscreen • ← / → changes file\nSpace plays / pauses video and GIFs")
+        self.blackout_button = QPushButton("Blackout (B)")
+        self.blackout_button.setObjectName("blackoutButton")
+        self.blackout_button.setCheckable(True)
+        self.blackout_button.setToolTip("Black out the fullscreen display. Playback and audio continue; the main preview stays visible.")
+        self.blackout_button.toggled.connect(self.set_blackout)
+        details_layout.addWidget(self.blackout_button)
+        self.output_status = QLabel("OUTPUT CLOSED")
+        self.output_status.setObjectName("section")
+        details_layout.addWidget(self.output_status)
+        self.remaining_label = QLabel("—")
+        self.remaining_label.setObjectName("countdown")
+        details_layout.addWidget(self.remaining_label)
+        remaining_hint = QLabel("Remaining in current item")
+        remaining_hint.setObjectName("hint")
+        details_layout.addWidget(remaining_hint)
+        self.output_timer_check = QCheckBox("Show countdown on fullscreen")
+        self.output_timer_check.toggled.connect(self.update_countdown)
+        details_layout.addWidget(self.output_timer_check)
+        hint = QLabel("Esc closes fullscreen · B toggles blackout\nSpace pauses · ← / → changes item")
         hint.setObjectName("hint")
         hint.setWordWrap(True)
         details_layout.addWidget(hint)
@@ -313,7 +396,7 @@ class ViewerWindow(QMainWindow):
             QLabel#value { font-size: 13px; color: #eff3fd; }
             QLabel#hint { font-size: 11px; color: #94a1bc; }
             QLabel { color: #d6deef; }
-            QFrame#previewFrame, QFrame#details { background: #1b2230; border-radius: 10px; }
+            QFrame#previewFrame, QFrame#details, QFrame#playlistFrame { background: #1b2230; border-radius: 10px; }
             QScrollArea, QScrollArea QWidget { background: transparent; }
             QPushButton, QComboBox { background: #303b50; color: #f3f6ff; border: 1px solid #46536a;
                 border-radius: 6px; padding: 8px 11px; min-height: 22px; }
@@ -321,6 +404,15 @@ class ViewerWindow(QMainWindow):
             QPushButton:disabled { color: #8591a4; background: #252d3b; }
             QPushButton#primaryButton { background: #4769d3; border-color: #5777de; font-weight: 700; }
             QPushButton#primaryButton:hover { background: #5879e3; }
+            QPushButton:checked { background: #3c5290; border-color: #7290e9; }
+            QPushButton#blackoutButton:checked { background: #932f44; border-color: #da6b80; }
+            QLabel#countdown { font-size: 29px; font-weight: 700; color: #f4f7ff; }
+            QCheckBox { color: #d6deef; spacing: 6px; }
+            QListWidget, QDoubleSpinBox { color: #eff3fd; background: #141924; border: 1px solid #364258; border-radius: 5px; }
+            QListWidget::item { padding: 5px; }
+            QListWidget::item:selected { background: #3c5290; }
+            QFrame#playlistFrame QPushButton { padding: 4px 8px; min-height: 18px; }
+            QDoubleSpinBox { padding: 5px; }
             QComboBox QAbstractItemView { background: #253047; color: #eff3fd; }
             QSlider::groove:horizontal { height: 5px; background: #364258; border-radius: 2px; }
             QSlider::sub-page:horizontal { background: #6586ee; border-radius: 2px; }
@@ -331,10 +423,12 @@ class ViewerWindow(QMainWindow):
     def install_actions(self) -> None:
         for text, shortcut, callback in (
             ("Open", QKeySequence.StandardKey.Open, self.open_dialog),
-            ("Next image", Qt.Key.Key_Right, lambda: self.step_image(1)),
-            ("Previous image", Qt.Key.Key_Left, lambda: self.step_image(-1)),
+            ("Next item", Qt.Key.Key_Right, lambda: self.step_image(1)),
+            ("Previous item", Qt.Key.Key_Left, lambda: self.step_image(-1)),
             ("Fullscreen", Qt.Key.Key_F11, self.toggle_presentation),
             ("Play / pause", Qt.Key.Key_Space, self.space_pressed),
+            ("Blackout", Qt.Key.Key_B, self.blackout_button.toggle),
+            ("Save session", QKeySequence.StandardKey.Save, self.save_session_dialog),
         ):
             action = QAction(text, self)
             action.setShortcut(shortcut)
@@ -397,7 +491,97 @@ class ViewerWindow(QMainWindow):
         if filename:
             self.load_image(Path(filename))
 
-    def load_image(self, path: Path, quiet: bool = False) -> bool:
+    def add_playlist_dialog(self):
+        start = str(self.current_path.parent) if self.current_path else str(Path.home())
+        names, _ = QFileDialog.getOpenFileNames(self, "Add media to playlist", start, MEDIA_FILTER)
+        if names:
+            self.add_playlist_files([Path(name) for name in names])
+
+    def add_playlist_files(self, paths):
+        if self.playlist.active:
+            self.statusBar().showMessage("Stop the playlist before adding or rearranging items.", 6000)
+            return
+        accepted = [Path(path) for path in paths if Path(path).suffix.lower() in MEDIA_SUFFIXES]
+        self.playlist.add(accepted)
+        self.playlist_button.setChecked(True)
+        self.statusBar().showMessage(f"Added {len(accepted)} item(s) to the playlist.", 5000)
+
+    def session_settings(self):
+        return {"still_seconds": self.playlist.still_seconds,
+                "repeat_playlist": self.playlist.repeat,
+                "clip_loop": self.playlist._saved_loop if self.playlist.active else self.playback.loop,
+                "sizing": self.mode_combo.currentText(),
+                "show_countdown": self.output_timer_check.isChecked(),
+                "volume": self.volume_slider.value(), "muted": self.mute_button.isChecked()}
+
+    def save_session_file(self, path):
+        paths = self.playlist.paths or ([self.current_path] if self.current_path else [])
+        write_session(path, paths, self.session_settings())
+        self.session_path = Path(path).resolve()
+        self.statusBar().showMessage(f"Session saved: {self.session_path.name}", 6000)
+
+    def save_session_dialog(self):
+        suggested = self.session_path or Path.home() / "My-show.imagedesk.json"
+        name, _ = QFileDialog.getSaveFileName(self, "Save Image Desk session", str(suggested),
+                                             "Image Desk session (*.imagedesk.json)")
+        if not name:
+            return
+        if not name.lower().endswith(".imagedesk.json"):
+            name += ".imagedesk.json"
+        try:
+            self.save_session_file(Path(name))
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "Cannot save session", str(error))
+
+    def open_session_dialog(self):
+        start = self.session_path.parent if self.session_path else Path.home()
+        name, _ = QFileDialog.getOpenFileName(self, "Open Image Desk session", str(start),
+                                             "Image Desk session (*.imagedesk.json);;JSON files (*.json)")
+        if name:
+            self.open_session_file(Path(name))
+
+    def open_session_file(self, path, quiet=False):
+        try:
+            paths, settings = read_session(path)
+            if any(p.suffix.lower() not in MEDIA_SUFFIXES for p in paths):
+                raise ValueError("The session contains an unsupported media file type.")
+        except (OSError, ValueError) as error:
+            if not quiet:
+                QMessageBox.warning(self, "Cannot open session", str(error))
+            return False
+        self.playlist.stop()
+        self.playback.clear()
+        self.current_path = self.image = None
+        self.preview.set_image(None)
+        if self.presentation:
+            self.presentation.canvas.set_image(None)
+        self.set_info({key: "—" for key in self.info_values})
+        self.playlist.set_items(paths)
+        self.playlist_panel.seconds.setValue(settings["still_seconds"])
+        self.playlist_panel.repeat.setChecked(settings["repeat_playlist"])
+        self.repeat_combo.setCurrentIndex(int(settings["clip_loop"]))
+        self.playback.set_loop(settings["clip_loop"])
+        self.mode_combo.setCurrentText(settings["sizing"])
+        self.output_timer_check.setChecked(settings["show_countdown"])
+        self.volume_slider.setValue(settings["volume"])
+        self.mute_button.setChecked(settings["muted"])
+        self.session_path = Path(path).resolve()
+        self.playlist_button.setChecked(True)
+        self.placeholder.setText("Session loaded. Start the playlist when ready.")
+        self.placeholder.show()
+        self.setWindowTitle(f"Image Desk — {self.session_path.name}")
+        missing = sum(not p.is_file() for p in paths)
+        self.statusBar().showMessage(f"Loaded {len(paths)} item(s). {missing} missing file(s).", 10000)
+        self.update_controls()
+        self.update_countdown()
+        return True
+
+    def load_image(self, path: Path, quiet: bool = False, from_playlist=False) -> bool:
+        if not from_playlist:
+            if self.playlist.active:
+                self.playlist.stop(pause=False)
+            self.playlist.index = -1
+            self.playlist.changed.emit()
         self._seeking = False
         path = path.expanduser().resolve()
         if not path.is_file():
@@ -492,10 +676,55 @@ class ViewerWindow(QMainWindow):
         self.update_controls()
 
     def space_pressed(self):
-        if self.playback.kind in ("video", "gif"):
+        if self.playlist.active:
+            if self.playlist.paused:
+                self.playlist.resume()
+            else:
+                self.playlist.pause()
+        elif self.playback.kind in ("video", "gif"):
             self.playback.toggle()
         else:
             self.step_image(1)
+
+    def restart_current(self):
+        if self.playlist.active:
+            self.playlist.restart_item()
+        else:
+            self.playback.restart()
+
+    def set_blackout(self, enabled):
+        self.blackout = enabled
+        self.blackout_button.setText("Restore output (B)" if enabled else "Blackout (B)")
+        if self.presentation:
+            self.presentation.canvas.set_blackout(enabled)
+        self.update_controls()
+
+    def remaining_milliseconds(self):
+        p, c = self.playback, self.playlist
+        if not self.current_path or p.error:
+            return None
+        if p.kind == "video" and p.duration > 0:
+            return max(0, p.duration - p.position) if not p.ended else 0
+        if c.index >= 0 and c.paths[c.index] == self.current_path and c.timed_still:
+            return c.still_remaining
+        return None
+
+    def update_countdown(self, *_args):
+        remaining = self.remaining_milliseconds()
+        if remaining is not None:
+            text = clock_text(remaining + 999)  # Round up while any time remains.
+        elif self.current_path and self.playback.kind == "gif" and not self.playback.error:
+            p = self.playback
+            count = 0 if p.ended else max(0, p.frame_count - p.position)
+            text = f"{count} frame{'s' if count != 1 else ''}"
+        elif self.current_path and self.playback.kind == "image":
+            text = "Held"
+        else:
+            text = "—"
+        self.remaining_label.setText(text)
+        if self.presentation:
+            self.presentation.canvas.set_countdown(
+                f"{text} remaining" if self.output_timer_check.isChecked() and text not in ("—", "Held") else "")
 
     def change_mute(self, muted):
         self.playback.audio.setMuted(muted)
@@ -506,10 +735,12 @@ class ViewerWindow(QMainWindow):
 
     def seek_finished(self):
         self._seeking = False
+        self.playlist.cancel_transition()
         self.playback.seek(self.seek_slider.value())
 
     def seek_value_changed(self, value):
         if not self._seeking:
+            self.playlist.cancel_transition()
             self.playback.seek(value)
 
     def update_playback_controls(self):
@@ -520,6 +751,12 @@ class ViewerWindow(QMainWindow):
         self.restart_button.setEnabled(not p.error)
         self.seek_slider.setEnabled(p.seekable and not p.error)
         self.playback_label.setText("Cannot play" if p.error else "Finished" if p.ended else "Playing" if p.playing else "Paused")
+        self.repeat_combo.setEnabled(not self.playlist.active)
+        self.repeat_combo.blockSignals(True)
+        self.repeat_combo.setCurrentIndex(0 if self.playlist.active else int(p.loop))
+        self.repeat_combo.blockSignals(False)
+        self.repeat_combo.setToolTip("Playlist items play once. Use Repeat playlist for the sequence." if self.playlist.active
+                                    else "Play once holds the last frame. Loop repeats the current file.")
         self.seek_slider.blockSignals(True)
         if p.kind == "gif":
             self.seek_slider.setRange(0, max(0, p.frame_count - 1))
@@ -532,6 +769,7 @@ class ViewerWindow(QMainWindow):
         self.seek_slider.blockSignals(False)
         for widget in (self.volume_label, self.volume_slider, self.mute_button):
             widget.setVisible(p.kind == "video")
+        self.update_countdown()
 
     def sibling_images(self) -> list[Path]:
         if not self.current_path:
@@ -544,6 +782,9 @@ class ViewerWindow(QMainWindow):
             return []
 
     def step_image(self, direction: int) -> None:
+        if self.playlist.active:
+            self.playlist.step(direction)
+            return
         files = self.sibling_images()
         if not files or self.current_path not in files:
             return
@@ -575,6 +816,8 @@ class ViewerWindow(QMainWindow):
         self.presentation_screen = screen
         self.presentation.canvas.set_image(self.image)
         self.presentation.canvas.set_mode(self.mode_combo.currentText())
+        self.presentation.canvas.set_blackout(self.blackout)
+        self.update_countdown()
         # The initial geometry and explicit window screen both matter on systems
         # where showFullScreen() otherwise chooses the current primary display.
         self.presentation.setGeometry(screen.geometry())
@@ -597,19 +840,30 @@ class ViewerWindow(QMainWindow):
         self.next_button.setEnabled(has_image)
         self.fullscreen_button.setEnabled(has_image and self.screen_combo.count() > 0)
         self.fullscreen_button.setText("Close fullscreen" if self.presentation else "Show fullscreen")
+        state = ("OUTPUT BLACKED OUT" if self.presentation else "BLACKOUT ARMED") if self.blackout else (
+            "OUTPUT LIVE" if self.presentation else "OUTPUT CLOSED")
+        self.output_status.setText(state)
+        self.output_status.setStyleSheet("color: #ff9cab;" if self.blackout else "color: #8d9bb9;")
 
     def dragEnterEvent(self, event) -> None:  # noqa: N802
         if event.mimeData().hasUrls() and any(url.isLocalFile() for url in event.mimeData().urls()):
             event.acceptProposedAction()
 
     def dropEvent(self, event) -> None:  # noqa: N802
-        for url in event.mimeData().urls():
-            if url.isLocalFile():
-                self.load_image(Path(url.toLocalFile()))
-                event.acceptProposedAction()
-                return
+        paths = [Path(url.toLocalFile()) for url in event.mimeData().urls() if url.isLocalFile()]
+        if len(paths) > 1:
+            self.add_playlist_files(paths)
+        elif paths:
+            if str(paths[0]).lower().endswith(".imagedesk.json"):
+                self.open_session_file(paths[0])
+            else:
+                self.load_image(paths[0])
+        if paths:
+            event.acceptProposedAction()
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        self.countdown_timer.stop()
+        self.playlist.stop()
         self.playback.clear()
         if self.presentation:
             self.presentation.close()
@@ -622,7 +876,7 @@ def main() -> int:
         return run(ViewerWindow, sys.argv[2])
     app = QApplication(sys.argv)
     app.setApplicationName("Image Desk")
-    app.setApplicationVersion("2.0")
+    app.setApplicationVersion("3.0")
     initial = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     window = ViewerWindow(initial)
     window.show()
