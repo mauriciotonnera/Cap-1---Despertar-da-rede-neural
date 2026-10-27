@@ -1,4 +1,4 @@
-"""Image Desk 3.0: media playlists and presentation control on two screens."""
+"""Image Desk 3.0.1: media playlists and presentation control on two screens."""
 
 from __future__ import annotations
 
@@ -106,8 +106,8 @@ class ImageCanvas(QWidget):
                 aspect = Qt.AspectRatioMode.KeepAspectRatioByExpanding
             display_size = size.scaled(bounds.size(), aspect)
 
+        # Anchor every image/video/GIF frame at the canvas origin in every mode.
         target = QRect(QPoint(0, 0), display_size)
-        target.moveCenter(bounds.center())
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         painter.drawPixmap(target, self.pixmap)
         if self.countdown_text:
@@ -876,7 +876,7 @@ def main() -> int:
         return run(ViewerWindow, sys.argv[2])
     app = QApplication(sys.argv)
     app.setApplicationName("Image Desk")
-    app.setApplicationVersion("3.0")
+    app.setApplicationVersion("3.0.1")
     initial = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     window = ViewerWindow(initial)
     window.show()

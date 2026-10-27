@@ -1,16 +1,18 @@
-# Image Desk 3.0
+# Image Desk 3.0.1
 
 Image Desk keeps a preview and file information on your main display, with a clean fullscreen view on a selected display. Version 3.0 adds mixed-media playlists, automatic playback, presentation blackout, a remaining-time display and portable saved sessions, keeping the original dark interface.
 
+Version 3.0.1 anchors every image, video and GIF at the media area's top-left corner, coordinate **(0, 0)**, in both the main preview and fullscreen output.
+
 ## Use the app
 
-Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 3.0 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
+Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 3.0.1 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
 
 - Click **Open media…** or drop a file onto the window. Images, MP4, MOV and animated GIF files use the same preview and file-information panel.
 - Videos and animated GIFs start playing when opened. **Play once** stops and holds the final frame. **Loop** repeats the current file until you pause it or open another file. This choice also overrides the loop count embedded in a GIF and stays selected as you change files during the session.
 - Use **Play / Pause**, **Restart**, and the timeline below the preview. The GIF timeline shows frame numbers. Video includes a time display, volume slider and mute control.
 - Choose the presentation display and click **Show fullscreen**. The secondary display is selected automatically when available. Opening or closing fullscreen does not restart playback: both windows receive frames from the same player, and audio plays once through the system output. To use HDMI audio, select that output in your computer's sound settings.
-- **Fit**, **Fill** and **Actual size** control the fullscreen presentation. Fit shows the whole frame; Fill crops to the display. Actual size uses one media pixel per logical screen pixel.
+- **Fit**, **Fill** and **Actual size** control the fullscreen presentation. All modes start at the top-left corner. Fit shows the whole frame with unused space on the right or bottom; Fill crops any overflow at the right or bottom. Actual size uses one media pixel per logical screen pixel, also starting at (0, 0). The main preview uses Fit with the same top-left alignment.
 - The file panel shows file details and dimensions, plus duration, frame rate and codec when available for video, or frame count for GIFs. Rotated video and EXIF image orientation are respected.
 - Previous and Next move through supported media in the current folder. A disconnected presentation display closes fullscreen safely.
 
@@ -68,3 +70,5 @@ The build scripts install pinned PySide6 and PyInstaller dependencies in their o
 The repository's `.github/workflows/image-desk-build.yml` builds Windows x64, Intel Mac and Apple Silicon Mac on pushes to the dedicated `imagedesk-native-build` branch. Every build runs the packaged playback checks before uploading its artifact; Mac builds also verify the DMG and app layout.
 
 These personal builds are not signed with a commercial developer certificate or notarized by Apple. Operating-system security prompts may appear. For wider distribution, sign the Windows executable and sign and notarize the Mac app with the appropriate developer credentials.
+
+For the Mac build downloaded from this repository, if macOS says Apple could not verify the app, click **Done**, then go to **System Settings → Privacy & Security → Security → Open Anyway** and confirm **Open**. Try opening the app from Applications again if the option is not visible. See [Apple's first-launch guidance](https://support.apple.com/en-us/102445).
