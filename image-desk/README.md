@@ -1,18 +1,19 @@
-# Image Desk 3.0.1
+# Image Desk 3.1
 
 Image Desk keeps a preview and file information on your main display, with a clean fullscreen view on a selected display. Version 3.0 adds mixed-media playlists, automatic playback, presentation blackout, a remaining-time display and portable saved sessions, keeping the original dark interface.
 
-Version 3.0.1 anchors every image, video and GIF at the media area's top-left corner, coordinate **(0, 0)**, in both the main preview and fullscreen output.
+Version 3.1 adds selectable **Top left (0, 0)** or **Center** alignment and multiple named playlists. Every playlist keeps its own files, order, still-image duration and repeat setting. Sessions save the entire collection and alignment choice.
 
 ## Use the app
 
-Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 3.0.1 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
+Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 3.1 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
 
 - Click **Open media…** or drop a file onto the window. Images, MP4, MOV and animated GIF files use the same preview and file-information panel.
 - Videos and animated GIFs start playing when opened. **Play once** stops and holds the final frame. **Loop** repeats the current file until you pause it or open another file. This choice also overrides the loop count embedded in a GIF and stays selected as you change files during the session.
 - Use **Play / Pause**, **Restart**, and the timeline below the preview. The GIF timeline shows frame numbers. Video includes a time display, volume slider and mute control.
 - Choose the presentation display and click **Show fullscreen**. The secondary display is selected automatically when available. Opening or closing fullscreen does not restart playback: both windows receive frames from the same player, and audio plays once through the system output. To use HDMI audio, select that output in your computer's sound settings.
-- **Fit**, **Fill** and **Actual size** control the fullscreen presentation. All modes start at the top-left corner. Fit shows the whole frame with unused space on the right or bottom; Fill crops any overflow at the right or bottom. Actual size uses one media pixel per logical screen pixel, also starting at (0, 0). The main preview uses Fit with the same top-left alignment.
+- Use the **Alignment** dropdown above the preview to choose **Top left (0, 0)** or **Center**. This applies to images, videos and GIFs in both preview and fullscreen. It can be changed during playback without restarting the media; the default is Top left.
+- **Fit**, **Fill** and **Actual size** control the fullscreen presentation. Fit shows the whole frame; Fill crops overflow; Actual size uses one media pixel per logical screen pixel. Top-left alignment keeps the media origin at (0, 0), placing unused space or cropping on the right and bottom. Center alignment distributes it around the media. The main preview always uses Fit with the selected alignment.
 - The file panel shows file details and dimensions, plus duration, frame rate and codec when available for video, or frame count for GIFs. Rotated video and EXIF image orientation are respected.
 - Previous and Next move through supported media in the current folder. A disconnected presentation display closes fullscreen safely.
 
@@ -20,11 +21,13 @@ Keyboard: **Ctrl+O** (Windows) or **Command+O** (Mac) opens a file; **F11** togg
 
 ## Playlists and automatic playback
 
-1. Click **Add files…** in the playlist panel to select several images, videos or GIFs. Dropping multiple media files onto the main window also adds them to the playlist. Duplicate files are allowed.
+Use **+ Add playlist** to create and name another playlist, **Rename…** to change the current playlist's name, and the playlist dropdown to switch between them. Names must be unique and contain 1–80 characters. Adding a playlist selects the new empty list; previous lists keep their media and settings. Use Stop before adding or switching playlists. Renaming is available during playback too.
+
+1. Select the playlist you want to edit, then click **Add files…** to select several images, videos or GIFs. Dropping multiple media files onto the main window also adds them to that playlist. Duplicate files are allowed.
 2. Select an item and use the **up/down buttons** to change its position. Select one or more items and click **Remove** to remove them from the list; original files are never deleted.
-3. Set **Stills** to the display duration for still images (0.5–3,600 seconds). Single-frame GIFs use this duration too. Videos and animated GIFs play through once before advancing.
+3. Set **Stills** to the display duration for still images (0.5–3,600 seconds) in this playlist. Single-frame GIFs use this duration too. Videos and animated GIFs play through once before advancing.
 4. Click **Start playlist** to begin from the selected item (or the first item). Double-clicking an item starts the playlist there. **Pause playlist / Resume** and **Space** pause or resume the entire sequence, including a still image's countdown. **Stop** pauses the current item and ends automatic advance. Previous/Next follow the active playlist.
-5. Enable **Repeat playlist** to repeat the full sequence. Without repeat, the last item remains visible when finished. The individual clip's Play once/Loop setting is temporarily suspended during a playlist, then restored when it stops.
+5. Enable **Repeat playlist** to repeat this playlist's full sequence. Without repeat, the last item remains visible when finished. The individual clip's Play once/Loop setting is temporarily suspended during a playlist, then restored when it stops. Playback stays within the selected playlist and does not automatically move into another named playlist.
 
 The panel shows the current item number and next file. Stop playback before adding, removing or reordering items. Missing or unreadable items are skipped; an entirely unreadable repeating list stops instead of cycling forever. Clicking **Open media…** opens a standalone file and stops playlist automation. The **Playlist** toolbar button hides or reveals the panel, and its divider can be dragged to resize it.
 
@@ -36,9 +39,11 @@ The panel shows the current item number and next file. Stop playback before addi
 
 ## Save and reopen a show
 
-**Save session…** (Ctrl+S / Command+S) saves an `.imagedesk.json` file containing playlist order, still duration, repeat settings, fullscreen sizing, countdown visibility, volume and mute. If the playlist is empty, the currently open media file is saved as a one-item list.
+**Save session…** (Ctrl+S / Command+S) saves an `.imagedesk.json` file containing every named playlist, its media order, still duration and repeat setting, the selected playlist, alignment, fullscreen sizing, countdown visibility, volume and mute. If there is just one empty playlist, the currently open media file is saved as a one-item list.
 
-Use **Open session…**, drop a session file onto the app, or pass it on the command line to reopen it. Loading a session does not start playback or open fullscreen automatically. Missing files remain listed with a **missing** label so they can be identified and replaced. An invalid session leaves the current playlist intact.
+Use **Open session…**, drop a session file onto the app, or pass it on the command line to reopen it. Loading a session restores all playlists and selects the saved one; it does not start playback or open fullscreen automatically. Missing files remain listed with a **missing** label so they can be identified and replaced. An invalid session leaves the current collection intact.
+
+Existing Image Desk 3.0/3.0.1 sessions open as one playlist named **Playlist 1**, keeping their media order, timing and other saved settings. New sessions use format version 2 and require Image Desk 3.1 or later. Up to 100 playlists and 10,000 media entries in total can be saved in one session.
 
 Sessions reference media files; they do not copy or embed them. Keep the session and its media in the same folder structure when moving the show to another computer. Relative paths are used where possible; files on a different Windows drive use an absolute path. Screen selection and blackout state belong to the current operator session and are not restored from a saved show.
 
@@ -46,7 +51,7 @@ Sessions reference media files; they do not copy or embed them. Keep the session
 
 Still images include JPEG, PNG, BMP, TIFF, WebP and ICO. GIF files play their animation. Video extensions include MP4, MOV, M4V, AVI, MKV and WebM. Containers can hold different codecs; playback depends on whether the bundled Qt/FFmpeg backend can decode that file's codec. Unsupported or damaged videos show a playback error and can be replaced by opening another file.
 
-The packaged playback checks exercise H.264/AAC MP4, ProRes MOV, rotated MOV and animated GIFs, including looping, last-frame hold, seeking, fullscreen frame sharing and recovery from an invalid file. They also check mixed playlists, still countdowns, repeat and pause, blackout rendering, corrupt/missing items, single-frame GIF timing, and session portability and validation. These checks do not replace testing with physical monitors and audio equipment. Very large images and high-resolution video depend on the computer's available memory and decoding performance.
+The packaged playback checks exercise H.264/AAC MP4, ProRes MOV, rotated MOV and animated GIFs, including looping, last-frame hold, seeking, fullscreen frame sharing and recovery from an invalid file. They also check mixed playlists, still countdowns, repeat and pause, blackout rendering, corrupt/missing items, single-frame GIF timing, both alignments in each sizing mode, naming dialogs, independent playlists, portable collections and migration of older sessions. These checks do not replace testing with physical monitors and audio equipment. Very large images and high-resolution video depend on the computer's available memory and decoding performance.
 
 ## Run from source
 

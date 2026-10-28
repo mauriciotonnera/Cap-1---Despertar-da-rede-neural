@@ -1,4 +1,4 @@
-"""Image Desk 3.0.1: media playlists and presentation control on two screens."""
+"""Image Desk 3.1: named media playlists and presentation control on two screens."""
 
 from __future__ import annotations
 
@@ -65,6 +65,7 @@ class ImageCanvas(QWidget):
         super().__init__(parent)
         self.pixmap: QPixmap | None = None
         self.mode = "Fit"
+        self.alignment = "Top left"
         self.background = background
         self.blackout = False
         self.countdown_text = ""
@@ -76,6 +77,10 @@ class ImageCanvas(QWidget):
 
     def set_mode(self, mode: str) -> None:
         self.mode = mode
+        self.update()
+
+    def set_alignment(self, alignment):
+        self.alignment = alignment
         self.update()
 
     def set_blackout(self, enabled):
@@ -106,8 +111,9 @@ class ImageCanvas(QWidget):
                 aspect = Qt.AspectRatioMode.KeepAspectRatioByExpanding
             display_size = size.scaled(bounds.size(), aspect)
 
-        # Anchor every image/video/GIF frame at the canvas origin in every mode.
         target = QRect(QPoint(0, 0), display_size)
+        if self.alignment == "Center":
+            target.moveCenter(bounds.center())
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         painter.drawPixmap(target, self.pixmap)
         if self.countdown_text:
@@ -239,7 +245,17 @@ class ViewerWindow(QMainWindow):
         preview_layout.setContentsMargins(12, 12, 12, 12)
         caption = QLabel("MAIN SCREEN PREVIEW")
         caption.setObjectName("section")
-        preview_layout.addWidget(caption)
+        preview_header = QHBoxLayout()
+        preview_header.addWidget(caption)
+        preview_header.addStretch()
+        preview_header.addWidget(QLabel("Alignment"))
+        self.alignment_combo = QComboBox()
+        self.alignment_combo.addItem("Top left (0, 0)", "Top left")
+        self.alignment_combo.addItem("Center", "Center")
+        self.alignment_combo.setToolTip("Position all images, videos and GIFs in both the preview and fullscreen output")
+        self.alignment_combo.currentIndexChanged.connect(self.change_alignment)
+        preview_header.addWidget(self.alignment_combo)
+        preview_layout.addLayout(preview_header)
         self.preview = ImageCanvas()
         preview_layout.addWidget(self.preview, 1)
         self.placeholder = QLabel("Open an image or video to start")
@@ -390,6 +406,8 @@ class ViewerWindow(QMainWindow):
         self.update_controls()
         self.setStyleSheet("""
             QMainWindow, QWidget#root { background: #10141d; color: #e8edf8; }
+            QDialog { background: #1b2230; color: #e8edf8; }
+            QLineEdit { background: #141924; color: #eff3fd; border: 1px solid #46536a; padding: 6px; }
             QLabel#brand { font-size: 17px; font-weight: 800; letter-spacing: 2px; color: #f4f7ff; }
             QLabel#section { font-size: 11px; font-weight: 700; color: #8d9bb9; letter-spacing: 1px; }
             QLabel#field { color: #91a0bd; font-size: 10px; font-weight: 700; }
@@ -511,12 +529,15 @@ class ViewerWindow(QMainWindow):
                 "repeat_playlist": self.playlist.repeat,
                 "clip_loop": self.playlist._saved_loop if self.playlist.active else self.playback.loop,
                 "sizing": self.mode_combo.currentText(),
+                "alignment": self.alignment_combo.currentData(),
                 "show_countdown": self.output_timer_check.isChecked(),
                 "volume": self.volume_slider.value(), "muted": self.mute_button.isChecked()}
 
     def save_session_file(self, path):
-        paths = self.playlist.paths or ([self.current_path] if self.current_path else [])
-        write_session(path, paths, self.session_settings())
+        playlists = self.playlist.export_playlists()
+        if len(playlists) == 1 and not playlists[0].paths and self.current_path:
+            playlists[0].paths = [self.current_path]
+        write_session(path, playlists, self.playlist.selected_playlist, self.session_settings())
         self.session_path = Path(path).resolve()
         self.statusBar().showMessage(f"Session saved: {self.session_path.name}", 6000)
 
@@ -542,7 +563,8 @@ class ViewerWindow(QMainWindow):
 
     def open_session_file(self, path, quiet=False):
         try:
-            paths, settings = read_session(path)
+            playlists, selected, settings = read_session(path)
+            paths = [media for entry in playlists for media in entry.paths]
             if any(p.suffix.lower() not in MEDIA_SUFFIXES for p in paths):
                 raise ValueError("The session contains an unsupported media file type.")
         except (OSError, ValueError) as error:
@@ -556,12 +578,11 @@ class ViewerWindow(QMainWindow):
         if self.presentation:
             self.presentation.canvas.set_image(None)
         self.set_info({key: "—" for key in self.info_values})
-        self.playlist.set_items(paths)
-        self.playlist_panel.seconds.setValue(settings["still_seconds"])
-        self.playlist_panel.repeat.setChecked(settings["repeat_playlist"])
+        self.playlist.replace_playlists(playlists, selected)
         self.repeat_combo.setCurrentIndex(int(settings["clip_loop"]))
         self.playback.set_loop(settings["clip_loop"])
         self.mode_combo.setCurrentText(settings["sizing"])
+        self.alignment_combo.setCurrentIndex(self.alignment_combo.findData(settings["alignment"]))
         self.output_timer_check.setChecked(settings["show_countdown"])
         self.volume_slider.setValue(settings["volume"])
         self.mute_button.setChecked(settings["muted"])
@@ -571,7 +592,7 @@ class ViewerWindow(QMainWindow):
         self.placeholder.show()
         self.setWindowTitle(f"Image Desk — {self.session_path.name}")
         missing = sum(not p.is_file() for p in paths)
-        self.statusBar().showMessage(f"Loaded {len(paths)} item(s). {missing} missing file(s).", 10000)
+        self.statusBar().showMessage(f"Loaded {len(playlists)} playlist(s), {len(paths)} item(s). {missing} missing file(s).", 10000)
         self.update_controls()
         self.update_countdown()
         return True
@@ -799,6 +820,12 @@ class ViewerWindow(QMainWindow):
         if self.presentation:
             self.presentation.canvas.set_mode(mode)
 
+    def change_alignment(self, *_args):
+        alignment = self.alignment_combo.currentData()
+        self.preview.set_alignment(alignment)
+        if self.presentation:
+            self.presentation.canvas.set_alignment(alignment)
+
     def toggle_presentation(self) -> None:
         if self.presentation:
             self.presentation.close()
@@ -816,6 +843,7 @@ class ViewerWindow(QMainWindow):
         self.presentation_screen = screen
         self.presentation.canvas.set_image(self.image)
         self.presentation.canvas.set_mode(self.mode_combo.currentText())
+        self.presentation.canvas.set_alignment(self.alignment_combo.currentData())
         self.presentation.canvas.set_blackout(self.blackout)
         self.update_countdown()
         # The initial geometry and explicit window screen both matter on systems
@@ -876,7 +904,7 @@ def main() -> int:
         return run(ViewerWindow, sys.argv[2])
     app = QApplication(sys.argv)
     app.setApplicationName("Image Desk")
-    app.setApplicationVersion("3.0.1")
+    app.setApplicationVersion("3.1")
     initial = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     window = ViewerWindow(initial)
     window.show()

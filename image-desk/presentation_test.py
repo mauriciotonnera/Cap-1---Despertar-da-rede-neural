@@ -4,6 +4,10 @@ import base64
 import json
 import shutil
 
+from PySide6.QtCore import QRect, QTimer
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
+from PySide6.QtWidgets import QApplication, QInputDialog
+
 
 def run_checks(window, root, wait, until, checks):
     p, c = window.playback, window.playlist
@@ -126,7 +130,8 @@ def run_checks(window, root, wait, until, checks):
     session = root / "Show.imagedesk.json"
     window.save_session_file(session)
     data = json.loads(session.read_text())
-    assert data["items"] == ["once.gif", "still.png", "missing.mp4"]
+    assert data["version"] == 2
+    assert data["playlists"][0]["items"] == ["once.gif", "still.png", "missing.mp4"]
     moved = root / "moved-show"
     moved.mkdir()
     for name in ("once.gif", "still.png", session.name):
@@ -146,3 +151,159 @@ def run_checks(window, root, wait, until, checks):
     assert c.paths == before and window.session_settings() == expected
     checks.append("Reorder/remove, portable session round-trip, saved settings, missing-file labels and invalid-session recovery")
     c.changed.disconnect(record)
+    run_collection_checks(window, root, wait, until, checks)
+
+
+def run_collection_checks(window, root, wait, until, checks):
+    p, c, panel = window.playback, window.playlist, window.playlist_panel
+    canvas = type(window.preview)("#121212")
+    canvas.resize(400, 300)
+    canvas.show()
+    media = QImage(200, 100, QImage.Format.Format_RGB32)
+    media.fill(QColor("#2a6dc0"))
+    painter = QPainter(media)
+    painter.fillRect(QRect(0, 0, 40, 30), QColor("#f5c242"))
+    painter.end()
+    canvas.set_image(QPixmap.fromImage(media))
+
+    def pixel(x, y):
+        shot = canvas.grab().toImage()
+        ratio = shot.devicePixelRatio()
+        return shot.pixelColor(int(x * ratio), int(y * ratio)).name()
+
+    for mode in ("Fit", "Fill", "Actual size"):
+        canvas.set_mode(mode)
+        canvas.set_alignment("Top left")
+        assert pixel(0, 0) == "#f5c242", mode
+        canvas.set_alignment("Center")
+        if mode == "Fill":
+            assert pixel(30, 5) == "#2a6dc0"
+        else:
+            assert pixel(0, 0) == "#121212", mode
+            x, y = (5, 55) if mode == "Fit" else (105, 105)
+            assert pixel(x, y) == "#f5c242", mode
+    canvas.close()
+    window.load_image(root / "sample.mp4")
+    until(lambda: not p.last_frame.isNull())
+    window.toggle_presentation()
+    same_player = p.player
+    window.alignment_combo.setCurrentIndex(window.alignment_combo.findData("Center"))
+    wait(100)
+    assert p.player is same_player and p.playing
+    assert window.preview.alignment == window.presentation.canvas.alignment == "Center"
+    window.blackout_button.setChecked(True)
+    window.alignment_combo.setCurrentIndex(window.alignment_combo.findData("Top left"))
+    assert window.presentation.canvas.blackout
+    assert window.presentation.canvas.grab().toImage().pixelColor(0, 0).name() == "#000000"
+    window.blackout_button.setChecked(False)
+    window.alignment_combo.setCurrentIndex(window.alignment_combo.findData("Center"))
+    window.presentation.close()
+    window.load_image(root / "once.gif")
+    assert window.preview.alignment == "Center"
+    window.load_image(root / "still.png")
+    assert window.preview.alignment == "Center"
+    checks.append("Top-left/center rendering in Fit, Fill and Actual size; live alignment preserves shared playback and blackout")
+
+    def name_dialog(button, name):
+        def fill_dialog():
+            dialog = QApplication.activeModalWidget()
+            if isinstance(dialog, QInputDialog):
+                dialog.setTextValue(name)
+                dialog.accept()
+        QTimer.singleShot(100, fill_dialog)
+        # Bound a failed dialog check so the packaged test can still report it.
+        guard = QTimer()
+        guard.setSingleShot(True)
+        guard.timeout.connect(lambda: QApplication.activeModalWidget().reject()
+                              if QApplication.activeModalWidget() else None)
+        guard.start(3000)
+        button.click()
+        guard.stop()
+
+    name_dialog(panel.rename_button, "Opening")
+    assert c.current_playlist.name == panel.selector.currentText() == "Opening"
+    c.set_items([root / "still.png", root / "once.gif"])
+    panel.seconds.setValue(1.5)
+    panel.repeat.setChecked(True)
+    name_dialog(panel.new_button, "Interval")
+    assert len(c.playlists) == 2 and c.selected_playlist == 1 and not c.paths
+    assert panel.seconds.value() == 5.0 and not panel.repeat.isChecked()
+    c.set_items([root / "sample.mp4", root / "missing.mp4"])
+    panel.seconds.setValue(2.0)
+    name_dialog(panel.rename_button, "Halftime — Interval")
+    assert c.current_playlist.name == panel.selector.currentText() == "Halftime — Interval"
+    for name in ("", " opening "):
+        try:
+            c.add_playlist(name)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Blank or duplicate playlist name accepted")
+    panel.selector.setCurrentIndex(0)
+    assert [path.name for path in c.paths] == ["still.png", "once.gif"]
+    assert panel.seconds.value() == 1.5 and panel.repeat.isChecked()
+    c.start()
+    c.pause()
+    assert not panel.selector.isEnabled() and not panel.new_button.isEnabled()
+    assert not c.select_playlist(1) and c.selected_playlist == 0
+    name_dialog(panel.rename_button, "Opening set")
+    assert c.active and c.paused and c.current_playlist.name == "Opening set"
+    c.stop()
+    assert panel.selector.isEnabled() and panel.new_button.isEnabled()
+    panel.selector.setCurrentIndex(1)
+    assert panel.seconds.value() == 2.0 and not panel.repeat.isChecked()
+    assert [path.name for path in c.paths] == ["sample.mp4", "missing.mp4"]
+    checks.append("Add/rename dialogs, unique names, independent playlist contents and timing, and safe selection during playback")
+
+    session = root / "Multiple.imagedesk.json"
+    window.save_session_file(session)
+    data = json.loads(session.read_text())
+    assert data["version"] == 2 and data["selected_playlist"] == 1
+    assert [entry["name"] for entry in data["playlists"]] == ["Opening set", "Halftime — Interval"]
+    assert data["playlists"][0]["items"] == ["still.png", "once.gif"]
+    assert data["playlists"][1]["items"] == ["sample.mp4", "missing.mp4"]
+    assert data["settings"]["alignment"] == "Center"
+    moved = root / "moved-playlists"
+    moved.mkdir()
+    for name in ("still.png", "once.gif", "sample.mp4", session.name):
+        shutil.copy2(root / name, moved / name)
+    c.rename_playlist("Temporary")
+    c.set_items([])
+    window.alignment_combo.setCurrentIndex(0)
+    assert window.open_session_file(moved / session.name, quiet=True)
+    assert [entry.name for entry in c.playlists] == ["Opening set", "Halftime — Interval"]
+    assert c.selected_playlist == 1 and panel.selector.currentIndex() == 1
+    assert window.preview.alignment == "Center" and not c.active and window.current_path is None
+    assert all(path.parent == moved for entry in c.playlists for path in entry.paths)
+    assert "missing" in panel.list.item(1).text()
+    panel.selector.setCurrentIndex(0)
+    assert panel.seconds.value() == 1.5 and panel.repeat.isChecked()
+    panel.selector.setCurrentIndex(1)
+    assert panel.seconds.value() == 2.0 and not panel.repeat.isChecked()
+    before = c.export_playlists()
+    bad = root / "bad-collection.imagedesk.json"
+    for change in ("duplicate", "selection", "alignment"):
+        damaged = json.loads(json.dumps(data))
+        if change == "duplicate":
+            damaged["playlists"][1]["name"] = damaged["playlists"][0]["name"]
+        elif change == "selection":
+            damaged["selected_playlist"] = 50
+        else:
+            damaged["settings"]["alignment"] = "Invalid"
+        bad.write_text(json.dumps(damaged))
+        assert not window.open_session_file(bad, quiet=True)
+        assert c.export_playlists() == before and c.selected_playlist == 1
+    checks.append("Portable multi-playlist sessions preserve names, order, selected playlist and alignment; invalid collections leave the show intact")
+
+    legacy = root / "Legacy.imagedesk.json"
+    legacy.write_text(json.dumps({"format": "image-desk-session", "version": 1,
+                                 "items": ["still.png", "once.gif"],
+                                 "settings": {"still_seconds": 4.0, "repeat_playlist": True}}))
+    assert window.open_session_file(legacy, quiet=True)
+    assert len(c.playlists) == 1 and c.current_playlist.name == "Playlist 1"
+    assert [path.name for path in c.paths] == ["still.png", "once.gif"]
+    assert panel.seconds.value() == 4.0 and panel.repeat.isChecked()
+    assert window.preview.alignment == "Top left" and not c.active
+    window.save_session_file(root / "Legacy-upgraded.imagedesk.json")
+    assert json.loads((root / "Legacy-upgraded.imagedesk.json").read_text())["version"] == 2
+    checks.append("Existing single-playlist sessions load and upgrade without losing media order or timing")

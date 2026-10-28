@@ -1,4 +1,4 @@
-name: Build Image Desk 3.0.1 native apps
+name: Build Image Desk 3.1 native apps
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: python image-desk/verify_build.py
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-3.0.1-Windows-x64
+          name: ImageDesk-3.1-Windows-x64
           path: image-desk/dist/ImageDesk.exe
           if-no-files-found: error
 
@@ -42,8 +42,8 @@ jobs:
         run: ./image-desk/package_mac.sh Intel
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-3.0.1-macOS-Intel
-          path: image-desk/dist/ImageDesk-3.0.1-macOS-Intel.dmg
+          name: ImageDesk-3.1-macOS-Intel
+          path: image-desk/dist/ImageDesk-3.1-macOS-Intel.dmg
           if-no-files-found: error
 
   mac-apple-silicon:
@@ -61,6 +61,6 @@ jobs:
         run: ./image-desk/package_mac.sh Apple-Silicon
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-3.0.1-macOS-Apple-Silicon
-          path: image-desk/dist/ImageDesk-3.0.1-macOS-Apple-Silicon.dmg
+          name: ImageDesk-3.1-macOS-Apple-Silicon
+          path: image-desk/dist/ImageDesk-3.1-macOS-Apple-Silicon.dmg
           if-no-files-found: error

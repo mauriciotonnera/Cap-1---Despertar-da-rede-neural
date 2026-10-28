@@ -2,22 +2,29 @@
 
 from pathlib import Path
 from time import monotonic
+from dataclasses import replace
 
 from PySide6.QtCore import QObject, QTimer, Signal
+
+if __package__:
+    from .playlist_data import PlaylistData, playlist_name, validate_playlists
+else:
+    from playlist_data import PlaylistData, playlist_name, validate_playlists
 
 
 class Playlist(QObject):
     changed = Signal()
     itemsChanged = Signal()
+    playlistsChanged = Signal()
     notice = Signal(str)
 
     def __init__(self, playback, loader, parent=None):
         super().__init__(parent)
         self.playback, self.loader = playback, loader
-        self.paths = []
+        self.playlists = [PlaylistData("Playlist 1")]
+        self.selected_playlist = 0
         self.index = -1
-        self.active = self.paused = self.repeat = False
-        self.still_seconds = 5.0
+        self.active = self.paused = False
         self.status = "Ready"
         self._saved_loop = False
         self._generation = 0
@@ -30,6 +37,90 @@ class Playlist(QObject):
         self.timer.timeout.connect(self._tick)
         playback.changed.connect(self._media_changed)
         playback.failed.connect(self._media_failed)
+
+    @property
+    def current_playlist(self):
+        return self.playlists[self.selected_playlist]
+
+    @property
+    def paths(self):
+        return self.current_playlist.paths
+
+    @paths.setter
+    def paths(self, value):
+        self.current_playlist.paths = value
+
+    @property
+    def repeat(self):
+        return self.current_playlist.repeat
+
+    @repeat.setter
+    def repeat(self, value):
+        self.current_playlist.repeat = value
+
+    @property
+    def still_seconds(self):
+        return self.current_playlist.still_seconds
+
+    @still_seconds.setter
+    def still_seconds(self, value):
+        self.current_playlist.still_seconds = value
+
+    def suggested_name(self):
+        names = {entry.name.casefold() for entry in self.playlists}
+        number = 1
+        while f"playlist {number}" in names:
+            number += 1
+        return f"Playlist {number}"
+
+    def _name(self, name, exclude=-1):
+        name = playlist_name(name)
+        if any(i != exclude and entry.name.casefold() == name.casefold()
+               for i, entry in enumerate(self.playlists)):
+            raise ValueError("A playlist with that name already exists. Choose a different name.")
+        return name
+
+    def add_playlist(self, name):
+        if self.active:
+            raise ValueError("Stop playback before adding a playlist.")
+        if len(self.playlists) >= 100:
+            raise ValueError("A session can contain up to 100 playlists.")
+        entry = PlaylistData(self._name(name))
+        self.playlists.append(entry)
+        self.select_playlist(len(self.playlists) - 1)
+
+    def rename_playlist(self, name):
+        self.current_playlist.name = self._name(name, self.selected_playlist)
+        self.playlistsChanged.emit()
+
+    def select_playlist(self, selected):
+        if self.active or not 0 <= selected < len(self.playlists):
+            return False
+        if selected == self.selected_playlist:
+            return True
+        self.selected_playlist = selected
+        self._reset_selection()
+        return True
+
+    def _reset_selection(self):
+        self.cancel_transition()
+        self.index = -1
+        self._elapsed = 0.0
+        self.status = "Ready"
+        self.playlistsChanged.emit()
+        self.itemsChanged.emit()
+        self.changed.emit()
+
+    def export_playlists(self):
+        return [replace(entry, paths=entry.paths.copy()) for entry in self.playlists]
+
+    def replace_playlists(self, entries, selected=0):
+        if self.active:
+            raise ValueError("Stop playback before opening a session.")
+        copied = [replace(entry, paths=entry.paths.copy()) for entry in entries]
+        validate_playlists(copied, selected)
+        self.playlists, self.selected_playlist = copied, selected
+        self._reset_selection()
 
     @property
     def timed_still(self):

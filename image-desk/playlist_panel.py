@@ -1,9 +1,9 @@
 """Compact playlist controls in Image Desk's existing dark interface."""
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QDoubleSpinBox, QFrame,
-                               QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-                               QPushButton, QVBoxLayout)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
+                               QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem,
+                               QMessageBox, QPushButton, QVBoxLayout)
 
 
 class PlaylistPanel(QFrame):
@@ -20,7 +20,7 @@ class PlaylistPanel(QFrame):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(6)
         header = QHBoxLayout()
-        caption = QLabel("PLAYLIST")
+        caption = QLabel("PLAYLISTS")
         caption.setObjectName("section")
         header.addWidget(caption)
         header.addStretch()
@@ -29,10 +29,26 @@ class PlaylistPanel(QFrame):
         self.open_button = QPushButton("Open session…")
         self.open_button.clicked.connect(self.openRequested.emit)
         save = QPushButton("Save session…")
+        save.setToolTip("Save every named playlist and the presentation settings")
         save.clicked.connect(self.saveRequested.emit)
         for button in (self.add_button, self.open_button, save):
             header.addWidget(button)
         layout.addLayout(header)
+        names = QHBoxLayout()
+        self.selector = QComboBox()
+        self.selector.setMinimumWidth(120)
+        self.selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.selector.setMinimumContentsLength(10)
+        self.selector.setToolTip("Select a playlist. Stop playback before switching playlists.")
+        self.selector.currentIndexChanged.connect(self.select_playlist)
+        self.new_button = QPushButton("+ Add playlist")
+        self.new_button.clicked.connect(self.new_playlist)
+        self.rename_button = QPushButton("Rename…")
+        self.rename_button.clicked.connect(self.rename_playlist)
+        names.addWidget(self.selector, 1)
+        names.addWidget(self.new_button)
+        names.addWidget(self.rename_button)
+        layout.addLayout(names)
         body = QHBoxLayout()
         self.list = QListWidget()
         self.list.setMinimumHeight(55)
@@ -83,8 +99,46 @@ class PlaylistPanel(QFrame):
         self.status.setMinimumWidth(0)
         layout.addWidget(self.status)
         controller.itemsChanged.connect(self.refresh_items)
+        controller.playlistsChanged.connect(self.refresh_playlists)
         controller.changed.connect(self.refresh_state)
+        self.refresh_playlists()
         self.refresh_items()
+
+    def refresh_playlists(self):
+        c = self.controller
+        self.selector.blockSignals(True)
+        self.selector.clear()
+        self.selector.addItems([entry.name for entry in c.playlists])
+        self.selector.setCurrentIndex(c.selected_playlist)
+        self.selector.blockSignals(False)
+        self.repeat.blockSignals(True)
+        self.repeat.setChecked(c.repeat)
+        self.repeat.blockSignals(False)
+        self.seconds.blockSignals(True)
+        self.seconds.setValue(c.still_seconds)
+        self.seconds.blockSignals(False)
+
+    def select_playlist(self, index):
+        if not self.controller.select_playlist(index):
+            self.refresh_playlists()
+
+    def new_playlist(self):
+        name, ok = QInputDialog.getText(self, "Add playlist", "Playlist name:",
+                                        text=self.controller.suggested_name())
+        if ok:
+            try:
+                self.controller.add_playlist(name)
+            except ValueError as error:
+                QMessageBox.warning(self, "Cannot add playlist", str(error))
+
+    def rename_playlist(self):
+        name, ok = QInputDialog.getText(self, "Rename playlist", "Playlist name:",
+                                        text=self.controller.current_playlist.name)
+        if ok:
+            try:
+                self.controller.rename_playlist(name)
+            except ValueError as error:
+                QMessageBox.warning(self, "Cannot rename playlist", str(error))
 
     def selected_rows(self):
         return sorted(self.list.row(item) for item in self.list.selectedItems())
@@ -143,6 +197,9 @@ class PlaylistPanel(QFrame):
         rows = self.selected_rows()
         self.add_button.setEnabled(not c.active)
         self.open_button.setEnabled(not c.active)
+        self.selector.setEnabled(not c.active)
+        self.new_button.setEnabled(not c.active)
+        self.new_button.setToolTip("Stop playback before adding a playlist." if c.active else "Create and name another playlist")
         self.remove.setEnabled(not c.active and bool(rows))
         self.up.setEnabled(not c.active and len(rows) == 1 and rows[0] > 0)
         self.down.setEnabled(not c.active and len(rows) == 1 and rows[0] < len(c.paths) - 1)
