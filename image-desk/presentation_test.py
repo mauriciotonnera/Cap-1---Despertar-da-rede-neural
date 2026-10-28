@@ -129,7 +129,7 @@ def run_checks(window, root, wait, until, checks):
     expected = window.session_settings()
     session = root / "Show.imagedesk.json"
     window.save_session_file(session)
-    data = json.loads(session.read_text())
+    data = json.loads(session.read_text(encoding="utf-8"))
     assert data["version"] == 2
     assert data["playlists"][0]["items"] == ["once.gif", "still.png", "missing.mp4"]
     moved = root / "moved-show"
@@ -257,9 +257,9 @@ def run_collection_checks(window, root, wait, until, checks):
 
     session = root / "Multiple.imagedesk.json"
     window.save_session_file(session)
-    data = json.loads(session.read_text())
+    data = json.loads(session.read_text(encoding="utf-8"))
     assert data["version"] == 2 and data["selected_playlist"] == 1
-    assert [entry["name"] for entry in data["playlists"]] == ["Opening set", "Halftime — Interval"]
+    assert [entry["name"] for entry in data["playlists"]] == ["Opening set", "Halftime — Interval"], data["playlists"]
     assert data["playlists"][0]["items"] == ["still.png", "once.gif"]
     assert data["playlists"][1]["items"] == ["sample.mp4", "missing.mp4"]
     assert data["settings"]["alignment"] == "Center"
@@ -305,5 +305,5 @@ def run_collection_checks(window, root, wait, until, checks):
     assert panel.seconds.value() == 4.0 and panel.repeat.isChecked()
     assert window.preview.alignment == "Top left" and not c.active
     window.save_session_file(root / "Legacy-upgraded.imagedesk.json")
-    assert json.loads((root / "Legacy-upgraded.imagedesk.json").read_text())["version"] == 2
+    assert json.loads((root / "Legacy-upgraded.imagedesk.json").read_text(encoding="utf-8"))["version"] == 2
     checks.append("Existing single-playlist sessions load and upgrade without losing media order or timing")
