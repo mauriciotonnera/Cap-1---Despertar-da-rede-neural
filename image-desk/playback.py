@@ -2,9 +2,14 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer, QUrl, Qt, Signal
-from PySide6.QtGui import QImage, QMovie, QTransform
-from PySide6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer, QVideoSink
+from qtpy import PYSIDE2
+from qtpy.QtCore import QObject, QTimer, QUrl, Qt, Signal
+from qtpy.QtGui import QImage, QMovie, QTransform
+
+if PYSIDE2:
+    from legacy_video import AudioOutput, VideoPlayer
+else:
+    from qtpy.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer, QVideoSink
 
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
@@ -18,6 +23,7 @@ def clock_text(milliseconds: int) -> str:
 
 
 class Playback(QObject):
+    backend_name = "VLC 3 (legacy Windows)" if PYSIDE2 else "Qt 6 / FFmpeg"
     frameReady = Signal(QImage)
     changed = Signal()
     metadataChanged = Signal(dict)
@@ -29,7 +35,7 @@ class Playback(QObject):
         self.path = None
         self.player = None
         self.movie = None
-        self.audio = QAudioOutput(self)
+        self.audio = AudioOutput(self) if PYSIDE2 else QAudioOutput(self)
         self.audio.setVolume(0.8)
         self.loop = False
         self.playing = False
@@ -52,9 +58,12 @@ class Playback(QObject):
         self.kind = "image"
         old, self.player = self.player, None
         if old:
-            old.stop()
-            old.setAudioOutput(None)
-            old.setVideoSink(None)
+            if PYSIDE2:
+                old.close()
+            else:
+                old.stop()
+                old.setAudioOutput(None)
+                old.setVideoSink(None)
             old.deleteLater()
         if self.movie:
             self.movie.deleteLater()
@@ -70,6 +79,9 @@ class Playback(QObject):
     def load_video(self, path: Path):
         self.clear()
         self.kind, self.path = "video", path
+        if PYSIDE2:
+            self._load_legacy_video(path)
+            return
         p = self.player = QMediaPlayer(self)
         sink = QVideoSink(p)
         p.setAudioOutput(self.audio)
@@ -91,6 +103,31 @@ class Playback(QObject):
         p.setSource(QUrl.fromLocalFile(str(path)))
         p.play()
         self.changed.emit()
+
+    def _load_legacy_video(self, path):
+        p = self.player = VideoPlayer(path, self.audio, self)
+        p.frameReady.connect(lambda image: self._publish_frame(image) if p is self.player else None)
+        p.playingChanged.connect(lambda playing: self._legacy_state(p, playing))
+        p.positionChanged.connect(lambda value: self._video_position(p, value))
+        p.durationChanged.connect(lambda value: self._video_duration(p, value))
+        p.seekableChanged.connect(lambda value: self._video_seekable(p, value))
+        p.metadataChanged.connect(lambda data: self.metadataChanged.emit(data) if p is self.player else None)
+        p.finished.connect(lambda: self._legacy_finished(p))
+        p.failed.connect(lambda text: self._video_error(p, text))
+        p.setLoops(-1 if self.loop else 1)
+        p.play()
+        self.changed.emit()
+
+    def _legacy_state(self, player, playing):
+        if player is self.player:
+            self.playing = playing
+            self.changed.emit()
+
+    def _legacy_finished(self, player):
+        if player is self.player:
+            self.ended, self.playing = True, False
+            self.position = self.duration
+            self.changed.emit()
 
     def load_gif(self, path: Path):
         movie = QMovie(str(path))

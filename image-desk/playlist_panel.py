@@ -1,7 +1,7 @@
 """Compact playlist controls in Image Desk's existing dark interface."""
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
+from qtpy.QtCore import Qt, Signal
+from qtpy.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
                                QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem,
                                QMessageBox, QPushButton, QVBoxLayout)
 

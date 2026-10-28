@@ -4,7 +4,7 @@ from pathlib import Path
 from time import monotonic
 from dataclasses import replace
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from qtpy.QtCore import QObject, QTimer, Signal
 
 if __package__:
     from .playlist_data import PlaylistData, playlist_name, validate_playlists

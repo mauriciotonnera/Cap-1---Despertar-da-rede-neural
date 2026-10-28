@@ -10,7 +10,7 @@ $python = Join-Path $PSScriptRoot '.build-venv\Scripts\python.exe'
 if ($LASTEXITCODE -ne 0) { throw 'pip upgrade failed' }
 & $python -m pip install -r requirements.txt pyinstaller==6.22.3
 if ($LASTEXITCODE -ne 0) { throw 'Build dependencies could not be installed' }
-& $python -m PyInstaller --noconfirm --clean --onefile --windowed --name ImageDesk --add-data 'test_media.json:.' viewer.py
+& $python -m PyInstaller --noconfirm --clean --onefile --windowed --name ImageDesk --exclude-module legacy_video --add-data 'test_media.json:.' viewer.py
 if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed' }
 
 if (-not (Test-Path 'dist\ImageDesk.exe')) {

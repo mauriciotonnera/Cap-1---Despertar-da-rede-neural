@@ -5,10 +5,13 @@ import json
 import tempfile
 import traceback
 import sys
+import platform
+import struct
+from qtpy import API_NAME, QT_VERSION
 from pathlib import Path
 
-from PySide6.QtCore import QEventLoop, QTimer
-from PySide6.QtWidgets import QApplication
+from qtpy.QtCore import QEventLoop, QTimer
+from qtpy.QtWidgets import QApplication
 
 
 def wait(milliseconds):
@@ -45,12 +48,14 @@ def run(viewer_class, report_path):
     frames, errors, checks = [], [], []
     p.frameReady.connect(lambda image: frames.append(image.size()))
     p.failed.connect(errors.append)
-    report = {"success": False, "checks": checks}
+    report = {"success": False, "checks": checks, "runtime": {"os": platform.platform(),
+              "python": platform.python_version(), "bits": struct.calcsize("P") * 8,
+              "qt": QT_VERSION, "binding": API_NAME, "video_backend": p.backend_name}}
     callback_errors = []
     previous_hook = sys.excepthook
     sys.excepthook = lambda kind, value, trace: callback_errors.append("".join(traceback.format_exception(kind, value, trace)))
     try:
-        with tempfile.TemporaryDirectory(prefix="imagedesk-test-", ignore_cleanup_errors=True) as directory:
+        with tempfile.TemporaryDirectory(prefix="imagedesk-test-") as directory:
             root = Path(directory).resolve()  # macOS /var aliases /private/var.
             fixtures = json.loads(Path(__file__).with_name("test_media.json").read_text())
             for name, encoded in fixtures.items():
@@ -162,5 +167,5 @@ def run(viewer_class, report_path):
         if callback_errors:
             report["callback_errors"] = callback_errors
             report["success"] = False
-        Path(report_path).write_text(json.dumps(report, indent=2))
+        Path(report_path).write_text(json.dumps(report, indent=2), encoding="utf-8")
     return 0 if report["success"] else 1

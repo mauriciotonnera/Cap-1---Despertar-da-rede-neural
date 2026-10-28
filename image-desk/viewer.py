@@ -1,4 +1,4 @@
-"""Image Desk 3.1: named media playlists and presentation control on two screens."""
+"""Image Desk 3.2: named media playlists and presentation control on two screens."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QGuiApplication, QImageReader, QKeySequence, QPainter, QPixmap
-from PySide6.QtWidgets import (
+from qtpy.QtCore import QPoint, QRect, Qt, QTimer
+from qtpy.QtGui import QAction, QColor, QGuiApplication, QImageReader, QKeySequence, QPainter, QPixmap
+from qtpy.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
@@ -904,7 +904,7 @@ def main() -> int:
         return run(ViewerWindow, sys.argv[2])
     app = QApplication(sys.argv)
     app.setApplicationName("Image Desk")
-    app.setApplicationVersion("3.1")
+    app.setApplicationVersion("3.2")
     initial = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     window = ViewerWindow(initial)
     window.show()

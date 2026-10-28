@@ -1,12 +1,16 @@
-# Image Desk 3.1
+# Image Desk 3.2
 
 Image Desk keeps a preview and file information on your main display, with a clean fullscreen view on a selected display. Version 3.0 adds mixed-media playlists, automatic playback, presentation blackout, a remaining-time display and portable saved sessions, keeping the original dark interface.
 
 Version 3.1 adds selectable **Top left (0, 0)** or **Center** alignment and multiple named playlists. Every playlist keeps its own files, order, still-image duration and repeat setting. Sessions save the entire collection and alignment choice.
 
+Version 3.2 adds a separate **Legacy Windows** edition targeting updated Windows 7 SP1 through Windows 11, in both x86 and x64 builds. It uses Python 3.8.10, Qt 5.15.2 / PySide2 and bundled VLC 3 decoding while sharing the same interface, playlists and session format. See [Legacy Windows requirements and verification](WINDOWS-LEGACY.md).
+
+The modern Windows build requires Windows 10/11. The legacy build is a portable folder: extract the entire ZIP and run `ImageDesk-Legacy.exe`, keeping its DLLs and subfolders together. Native builds are automatically exercised on current Windows runners; Windows 7/8/8.1 remain target platforms pending tests on those actual OS versions. A dependency audit is not a substitute for that testing.
+
 ## Use the app
 
-Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 3.1 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
+Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 3.2 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
 
 - Click **Open media…** or drop a file onto the window. Images, MP4, MOV and animated GIF files use the same preview and file-information panel.
 - Videos and animated GIFs start playing when opened. **Play once** stops and holds the final frame. **Loop** repeats the current file until you pause it or open another file. This choice also overrides the loop count embedded in a GIF and stays selected as you change files during the session.
@@ -66,8 +70,9 @@ Use `python3` on macOS/Linux if needed. An optional file argument opens that fil
 
 ## Build standalone apps
 
-The build scripts install pinned PySide6 and PyInstaller dependencies in their own `.build-venv`.
+The modern build scripts install pinned PySide6, QtPy and PyInstaller dependencies in their own `.build-venv`. The legacy build uses its own Python 3.8 environment and pinned PySide2/VLC toolchain.
 
+- Legacy Windows: select Python **3.8.10** (x86 or x64), install 7-Zip, then run `powershell -ExecutionPolicy Bypass -File .\build_windows_legacy.ps1 -Architecture x64` (or `x86`). Output: `dist\ImageDesk-Legacy\ImageDesk-Legacy.exe` and its companion files. Run `python verify_build.py --legacy`. The build verifies the VideoLAN download checksum, stages the pinned runtime DLLs and audits known Windows-version incompatibilities.
 - Windows: run `powershell -ExecutionPolicy Bypass -File .\build_windows.ps1`. Output: `dist\ImageDesk.exe`.
 - Mac: run `./build_mac.sh`. Output: `dist/ImageDesk.app`, for the current Mac's processor. Run `./package_mac.sh Intel` or `./package_mac.sh Apple-Silicon` to create a DMG with the app and an Applications shortcut.
 - Run `python verify_build.py` after building to launch the actual packaged executable and check playback. The report is written to `dist/playback-check.json`. `test_media.json` contains small synthetic test clips bundled for these checks.

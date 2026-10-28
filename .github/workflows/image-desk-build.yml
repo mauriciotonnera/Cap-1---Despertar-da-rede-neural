@@ -1,4 +1,4 @@
-name: Build Image Desk 3.1 native apps
+name: Build Image Desk 3.2 native apps
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: python image-desk/verify_build.py
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-3.1-Windows-x64
+          name: ImageDesk-3.2-Windows-x64
           path: image-desk/dist/ImageDesk.exe
           if-no-files-found: error
 
@@ -42,8 +42,8 @@ jobs:
         run: ./image-desk/package_mac.sh Intel
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-3.1-macOS-Intel
-          path: image-desk/dist/ImageDesk-3.1-macOS-Intel.dmg
+          name: ImageDesk-3.2-macOS-Intel
+          path: image-desk/dist/ImageDesk-3.2-macOS-Intel.dmg
           if-no-files-found: error
 
   mac-apple-silicon:
@@ -61,6 +61,36 @@ jobs:
         run: ./image-desk/package_mac.sh Apple-Silicon
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-3.1-macOS-Apple-Silicon
-          path: image-desk/dist/ImageDesk-3.1-macOS-Apple-Silicon.dmg
+          name: ImageDesk-3.2-macOS-Apple-Silicon
+          path: image-desk/dist/ImageDesk-3.2-macOS-Apple-Silicon.dmg
           if-no-files-found: error
+
+  windows-legacy:
+    name: Windows legacy (${{ matrix.arch }})
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install original Python 3.8.10 Windows runtime
+        shell: pwsh
+        run: ./image-desk/setup_legacy_python.ps1 -Architecture ${{ matrix.arch }}
+      - name: Build Windows 7 SP1 target and audit dependencies
+        shell: pwsh
+        run: ./image-desk/build_windows_legacy.ps1 -Architecture ${{ matrix.arch }}
+      - name: Verify packaged playback, playlists and presentation controls
+        run: python image-desk/verify_build.py --legacy
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImageDesk-3.2-Windows-Legacy-${{ matrix.arch }}
+          path: image-desk/dist/ImageDesk-Legacy/
+          if-no-files-found: error
+      - name: Keep diagnostic reports when a check fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-diagnostics-${{ matrix.arch }}
+          path: image-desk/dist/**/*.json
+          if-no-files-found: ignore

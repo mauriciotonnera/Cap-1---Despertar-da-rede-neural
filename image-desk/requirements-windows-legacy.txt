@@ -1,0 +1,6 @@
+# Python 3.8.10, the last python.org Windows 7 binary release.
+PySide2==5.15.2.1
+shiboken2==5.15.2.1
+QtPy==2.4.3
+packaging==24.2
+python-vlc==3.0.21203

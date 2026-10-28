@@ -4,9 +4,9 @@ import base64
 import json
 import shutil
 
-from PySide6.QtCore import QRect, QTimer
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
-from PySide6.QtWidgets import QApplication, QInputDialog
+from qtpy.QtCore import QRect, QTimer
+from qtpy.QtGui import QColor, QImage, QPainter, QPixmap
+from qtpy.QtWidgets import QApplication, QInputDialog
 
 
 def run_checks(window, root, wait, until, checks):
