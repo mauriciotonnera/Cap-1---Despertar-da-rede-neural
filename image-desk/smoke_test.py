@@ -71,6 +71,15 @@ def run(viewer_class, report_path):
             assert len(frames) == count and not p.playing
             checks.append("MP4 H.264/AAC decoding, play once and last-frame hold")
 
+            if API_NAME == "PySide2":
+                p.seek(350)
+                wait(350)
+                assert not p.playing and abs(p.position - 350) < 100
+                p.play()
+                until(lambda: p.ended or p.error)
+                assert p.ended and not p.error
+                checks.append("Legacy video can seek from the held final frame, stay paused, and resume")
+
             p.restart()
             until(lambda: p.position >= 150)
             p.pause()

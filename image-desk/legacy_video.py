@@ -105,8 +105,11 @@ class VideoPlayer(QObject):
         self._has_audio = self._metadata = self._playing = self._seekable = False
         self._position = self._duration = 0
         self._restart_position = None
+        self._seek_sent = None
         self._frame_size = None
         self._prepared = self._request_play = False
+        self._audio_pending = False
+        self._pause_after_seek = False
         self._latest = None
         self._callback_error = ""
         self._lock = threading.Lock()
@@ -178,7 +181,7 @@ class VideoPlayer(QObject):
     def _apply_audio(self):
         if not self._closed:
             self._player.audio_set_volume(round(self.audio.volume() * 100))
-            self._player.audio_set_mute(self.audio.isMuted())
+            self._player.audio_set_mute(self.audio.isMuted() or self._pause_after_seek)
 
     def hasAudio(self):
         return self._has_audio
@@ -186,9 +189,10 @@ class VideoPlayer(QObject):
     def setLoops(self, count):
         self._loop = count == -1
 
-    def play(self):
+    def play(self, for_seek=False):
         if self._closed:
             return
+        self._pause_after_seek = for_seek
         self._request_play = True
         if not self._prepared:
             self.timer.start()
@@ -196,6 +200,7 @@ class VideoPlayer(QObject):
         if self._player.get_state() in (vlc.State.Ended, vlc.State.Error):
             self._player.stop()
         self._done = False
+        self._audio_pending = True
         self._opened = monotonic()
         if self._player.play() == -1:
             self._error("The video could not be opened.")
@@ -215,6 +220,12 @@ class VideoPlayer(QObject):
         value = max(0, int(milliseconds))
         if self._player.get_state() in (vlc.State.Ended, vlc.State.Stopped, vlc.State.NothingSpecial):
             self._restart_position = value
+            self._seek_sent = None
+            if self._prepared:
+                # Decode the selected frame after EOF without resuming the
+                # clip or playing a burst of audio. An explicit play() clears
+                # this temporary pause request (e.g. the Restart button).
+                self.play(for_seek=True)
         else:
             self._player.set_time(value)
         self._position = value
@@ -226,6 +237,7 @@ class VideoPlayer(QObject):
         self._closed = True
         self.timer.stop()
         self.audio.changed.disconnect(self._apply_audio)
+        self._media.parse_stop()
         # ctypes releases the GIL while stop waits for worker callbacks. Keep
         # buffers/callbacks alive until the decoder has completely stopped.
         self._player.stop()
@@ -302,20 +314,37 @@ class VideoPlayer(QObject):
             self._has_frame = True
             self.frameReady.emit(image)
         state = self._player.get_state()
+        if state == vlc.State.Playing and self._audio_pending:
+            # Some audio outputs ignore settings until a stream exists.
+            self._apply_audio()
+            self._audio_pending = False
         if not self._metadata:
             self._read_metadata()
         duration = max(0, self._player.get_length())
         if duration and duration != self._duration:
             self._duration = duration
             self.durationChanged.emit(duration)
-        seekable = bool(self._player.is_seekable())
+        seekable = self._seekable if state == vlc.State.Ended else bool(self._player.is_seekable())
         if seekable != self._seekable:
             self._seekable = seekable
             self.seekableChanged.emit(seekable)
-        if state == vlc.State.Playing and self._restart_position is not None:
-            self._player.set_time(self._restart_position)
-            self._restart_position = None
-        position = max(0, self._player.get_time())
+        if state in (vlc.State.Playing, vlc.State.Paused) and seekable and self._restart_position is not None:
+            if not self._pause_after_seek:
+                self._player.set_time(self._restart_position)
+                self._restart_position = None
+            elif self._seek_sent is None or monotonic() - self._seek_sent > 0.1:
+                # VLC initially reports the requested time before the input
+                # thread has applied it. Confirm on a later tick; otherwise a
+                # pause during startup can reset the displayed time to zero.
+                if self._seek_sent is not None and abs(self._player.get_time() - self._restart_position) < 80:
+                    self._restart_position = None
+                else:
+                    self._player.set_time(self._restart_position)
+                    self._player.set_pause(1)
+                    self._seek_sent = monotonic()
+                    self._request_play = False
+                    state = vlc.State.Paused
+        position = self._restart_position if self._pause_after_seek and self._restart_position is not None else max(0, self._player.get_time())
         if position != self._position:
             self._position = position
             self.positionChanged.emit(position)

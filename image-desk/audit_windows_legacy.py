@@ -16,6 +16,8 @@ for path in root.rglob("*"):
     if path.suffix.lower() not in (".exe", ".dll", ".pyd"):
         continue
     relative = str(path.relative_to(root))
+    if path.name.lower().startswith(("api-ms-win-", "ext-ms-win-")) or path.name.lower() == "ucrtbase.dll":
+        failures.append(relative + ": host OS DLL must not be bundled")
     # VLC includes optional Windows-8/10 display/audio plugins, selected only
     # on those OSes. Its Win7 paths use memory video output and DirectSound.
     optional = "plugins" in path.parts and "vlc" in path.parts

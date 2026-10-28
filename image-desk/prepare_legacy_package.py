@@ -5,6 +5,16 @@ from pathlib import Path
 import PySide2
 
 root = Path(sys.argv[1]).resolve()
+# API-set forwarders and ucrtbase from the build host are OS components, not
+# portable runtime files. On Win7, KB2999226 supplies the matching UCRT. Copying
+# Server 2022 forwarders would shadow the target OS's compatible implementation.
+removed = []
+for path in root.rglob("*.dll"):
+    name = path.name.lower()
+    if name.startswith(("api-ms-win-", "ext-ms-win-")) or name == "ucrtbase.dll":
+        removed.append(str(path.relative_to(root)))
+        path.unlink()
+print("Removed host-specific Windows DLLs:", len(removed))
 qt_root = Path(PySide2.__file__).parent
 runtime_names = ("msvcp140*.dll", "vcruntime140*.dll", "concrt140.dll")
 source_files = {}
