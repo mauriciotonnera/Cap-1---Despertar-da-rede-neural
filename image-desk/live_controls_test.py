@@ -144,25 +144,33 @@ def run_checks(window, root, wait, until, checks):
     until(lambda: p.playing)
     c.select_playlist(1)
     panel.start.click()
-    until(lambda: p.playing and c.playback_playlist.name == "Prepared live")
+    until(lambda: p.playing and p.position >= 100 and c.playback_playlist.name == "Prepared live")
     player, position = p.player, p.position
     dialog_observed = []
 
     def cancel_dialog():
         dialog = QApplication.activeModalWidget()
-        if isinstance(dialog, QFileDialog):
-            dialog_observed.append(p.playing and p.position > position)
+        if isinstance(dialog, QFileDialog) and p.playing and p.position > position:
+            dialog_observed.append(True)
             dialog.reject()
 
-    QTimer.singleShot(400, cancel_dialog)
+    # Dialog construction can process events before the modal window becomes
+    # visible on a cold 32-bit Windows runner. Observe the real dialog instead
+    # of assuming it is already open at one fixed 400 ms checkpoint.
+    monitor = QTimer()
+    monitor.setInterval(40)
+    monitor.timeout.connect(cancel_dialog)
+    monitor.start()
     guard = QTimer()
     guard.setSingleShot(True)
     guard.timeout.connect(lambda: QApplication.activeModalWidget().reject()
                           if QApplication.activeModalWidget() else None)
-    guard.start(3000)
+    guard.start(2000)
     panel.add_button.click()
     guard.stop()
-    assert dialog_observed == [True] and p.player is player and c.active
+    monitor.stop()
+    assert dialog_observed == [True] and p.player is player and c.active, (
+        dialog_observed, position, p.position, p.playing, p.player is player, c.active)
     # An explicit session replacement remains usable while a show is running.
     session = root / "Live-session.imagedesk.json"
     window.save_session_file(session)
