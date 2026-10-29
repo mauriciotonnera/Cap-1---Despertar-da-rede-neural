@@ -61,7 +61,7 @@ def read_session(path):
     except (UnicodeError, json.JSONDecodeError) as error:
         raise ValueError("This is not a valid Image Desk session.") from error
     if (not isinstance(data, dict) or data.get("format") != "image-desk-session"
-            or type(data.get("version")) is not int or data["version"] not in (1, 2)):
+            or type(data.get("version")) is not int or data["version"] not in (1, 2, 3)):
         raise ValueError("Unsupported Image Desk session format.")
     settings = validate_settings(data.get("settings", {}))
     if data["version"] == 1:
@@ -78,7 +78,8 @@ def read_session(path):
             if not isinstance(entry, dict):
                 raise ValueError("The session contains an invalid playlist.")
             playlists.append(PlaylistData(entry.get("name"), _read_items(entry.get("items"), path.parent),
-                                          entry.get("still_seconds", 5.0), entry.get("repeat", False)))
+                                          entry.get("still_seconds", 5.0), entry.get("repeat", False),
+                                          entry.get("volumes", [])))
         selected = data.get("selected_playlist", 0)
     validate_playlists(playlists, selected)
     settings["still_seconds"] = playlists[selected].still_seconds
@@ -106,10 +107,12 @@ def write_session(path, playlists, selected, settings):
     settings.pop("repeat_playlist")
     entries = []
     for entry in playlists:
-        validated = PlaylistData(entry.name, entry.paths.copy(), entry.still_seconds, entry.repeat)
+        validated = PlaylistData(entry.name, entry.paths.copy(), entry.still_seconds, entry.repeat,
+                                 entry.volumes.copy())
         entries.append({"name": validated.name, "items": _write_items(validated.paths, path.parent),
-                        "still_seconds": validated.still_seconds, "repeat": validated.repeat})
-    data = {"format": "image-desk-session", "version": 2, "playlists": entries,
+                        "still_seconds": validated.still_seconds, "repeat": validated.repeat,
+                        "volumes": validated.volumes})
+    data = {"format": "image-desk-session", "version": 3, "playlists": entries,
             "selected_playlist": selected, "settings": settings}
     payload = json.dumps(data, ensure_ascii=False, indent=2)
     if len(payload.encode("utf-8")) > 10_000_000:

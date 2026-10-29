@@ -1,15 +1,17 @@
 """One media clock and decoded frame stream for both Image Desk windows."""
 
 from pathlib import Path
+from time import monotonic
 
 from qtpy import PYSIDE2
 from qtpy.QtCore import QObject, QTimer, QUrl, Qt, Signal
 from qtpy.QtGui import QImage, QMovie, QTransform
+from audio_meter import pcm_peaks
 
 if PYSIDE2:
     from legacy_video import AudioOutput, VideoPlayer
 else:
-    from qtpy.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer, QVideoSink
+    from qtpy.QtMultimedia import QAudioBufferOutput, QAudioFormat, QAudioOutput, QMediaMetaData, QMediaPlayer, QVideoSink
 
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
@@ -28,6 +30,7 @@ class Playback(QObject):
     changed = Signal()
     metadataChanged = Signal(dict)
     failed = Signal(str)
+    audioLevels = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -37,6 +40,14 @@ class Playback(QObject):
         self.movie = None
         self.audio = AudioOutput(self) if PYSIDE2 else QAudioOutput(self)
         self.audio.setVolume(0.8)
+        self.master_volume, self.item_volume = 0.8, 1.0
+        self.raw_levels = (0.0, 0.0)
+        self._raw_at = 0.0
+        if PYSIDE2:
+            self.audio.changed.connect(self._emit_levels)
+        else:
+            self.audio.volumeChanged.connect(self._emit_levels)
+            self.audio.mutedChanged.connect(self._emit_levels)
         self.loop = False
         self.playing = False
         self.ended = False
@@ -52,6 +63,38 @@ class Playback(QObject):
         self.timer.setSingleShot(True)
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self._advance_gif)
+        self.changed.connect(self._emit_levels)
+
+    def set_master_volume(self, value):
+        self.master_volume = max(0.0, min(1.0, float(value)))
+        self.audio.setVolume(self.master_volume * self.item_volume)
+
+    def set_item_volume(self, value):
+        self.item_volume = max(0.0, min(1.0, float(value)))
+        self.audio.setVolume(self.master_volume * self.item_volume)
+
+    def _emit_levels(self, *_args):
+        gain = self.audio.volume() if self.playing and not self.audio.isMuted() and monotonic() - self._raw_at < 0.2 else 0.0
+        self.audioLevels.emit(tuple(value * gain for value in self.raw_levels))
+
+    def _audio_peaks(self, player, levels):
+        if player is self.player:
+            self.raw_levels = levels
+            self._raw_at = monotonic()
+            self._emit_levels()
+
+    def _audio_buffer(self, player, buffer):
+        if player is not self.player:
+            return
+        if not buffer.isValid():
+            self._audio_peaks(player, (0.0, 0.0))
+            return
+        fmt = buffer.format()
+        formats = {QAudioFormat.SampleFormat.UInt8: "u8", QAudioFormat.SampleFormat.Int16: "s16",
+                   QAudioFormat.SampleFormat.Int32: "s32", QAudioFormat.SampleFormat.Float: "float"}
+        kind = formats.get(fmt.sampleFormat())
+        if kind and fmt.channelCount() > 0:
+            self._audio_peaks(player, pcm_peaks(buffer.constData(), fmt.channelCount(), kind))
 
     def clear(self):
         self.timer.stop()
@@ -62,6 +105,7 @@ class Playback(QObject):
                 old.close()
             else:
                 old.stop()
+                old.setAudioBufferOutput(None)
                 old.setAudioOutput(None)
                 old.setVideoSink(None)
             old.deleteLater()
@@ -74,6 +118,7 @@ class Playback(QObject):
         self.position = self.duration = self.frame_count = self._gif_remaining = 0
         self._size = None
         self.last_frame = QImage()
+        self.raw_levels = (0.0, 0.0)
         self.changed.emit()
 
     def load_video(self, path: Path):
@@ -84,6 +129,8 @@ class Playback(QObject):
             return
         p = self.player = QMediaPlayer(self)
         sink = QVideoSink(p)
+        audio_tap = QAudioBufferOutput(p)
+        p.setAudioBufferOutput(audio_tap)
         p.setAudioOutput(self.audio)
         p.setVideoSink(sink)
         p.setLoops(-1 if self.loop else 1)
@@ -92,6 +139,7 @@ class Playback(QObject):
         # Queue callbacks onto the GUI thread. Direct Python callbacks from the
         # decoder thread can deadlock a seek/stop while it waits for that thread.
         queued = Qt.ConnectionType.QueuedConnection
+        audio_tap.audioBufferReceived.connect(lambda buffer: self._audio_buffer(p, buffer), queued)
         sink.videoFrameChanged.connect(lambda frame: self._video_frame(p, frame), queued)
         p.playbackStateChanged.connect(lambda state: self._video_state(p, state), queued)
         p.positionChanged.connect(lambda value: self._video_position(p, value), queued)
@@ -107,6 +155,7 @@ class Playback(QObject):
     def _load_legacy_video(self, path):
         p = self.player = VideoPlayer(path, self.audio, self)
         p.frameReady.connect(lambda image: self._publish_frame(image) if p is self.player else None)
+        p.audioPeaks.connect(lambda levels: self._audio_peaks(p, levels))
         p.playingChanged.connect(lambda playing: self._legacy_state(p, playing))
         p.positionChanged.connect(lambda value: self._video_position(p, value))
         p.durationChanged.connect(lambda value: self._video_duration(p, value))

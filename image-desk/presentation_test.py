@@ -79,7 +79,7 @@ def run_checks(window, root, wait, until, checks):
     c.set_items([root / "sample.mp4"])
     c.start()
     until(lambda: p.position >= 100)
-    window.play_button.click()
+    window.pause_button.click()
     until(lambda: not p.playing)
     assert c.paused and c.active
     window.seek_slider.setValue(350)
@@ -130,7 +130,7 @@ def run_checks(window, root, wait, until, checks):
     session = root / "Show.imagedesk.json"
     window.save_session_file(session)
     data = json.loads(session.read_text(encoding="utf-8"))
-    assert data["version"] == 2
+    assert data["version"] == 3
     assert data["playlists"][0]["items"] == ["once.gif", "still.png", "missing.mp4"]
     moved = root / "moved-show"
     moved.mkdir()
@@ -258,7 +258,7 @@ def run_collection_checks(window, root, wait, until, checks):
     session = root / "Multiple.imagedesk.json"
     window.save_session_file(session)
     data = json.loads(session.read_text(encoding="utf-8"))
-    assert data["version"] == 2 and data["selected_playlist"] == 1
+    assert data["version"] == 3 and data["selected_playlist"] == 1
     assert [entry["name"] for entry in data["playlists"]] == ["Opening set", "Halftime — Interval"], data["playlists"]
     assert data["playlists"][0]["items"] == ["still.png", "once.gif"]
     assert data["playlists"][1]["items"] == ["sample.mp4", "missing.mp4"]
@@ -305,5 +305,5 @@ def run_collection_checks(window, root, wait, until, checks):
     assert panel.seconds.value() == 4.0 and panel.repeat.isChecked()
     assert window.preview.alignment == "Top left" and not c.active
     window.save_session_file(root / "Legacy-upgraded.imagedesk.json")
-    assert json.loads((root / "Legacy-upgraded.imagedesk.json").read_text(encoding="utf-8"))["version"] == 2
+    assert json.loads((root / "Legacy-upgraded.imagedesk.json").read_text(encoding="utf-8"))["version"] == 3
     checks.append("Existing single-playlist sessions load and upgrade without losing media order or timing")

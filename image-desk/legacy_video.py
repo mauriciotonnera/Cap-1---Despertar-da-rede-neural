@@ -29,6 +29,7 @@ if sys.platform == "win32":
     os.environ["VLC_PLUGIN_PATH"] = str(_root / "plugins")
 
 import vlc
+from legacy_audio import LegacyAudio
 
 _instance = None
 
@@ -94,6 +95,7 @@ class VideoPlayer(QObject):
     metadataChanged = Signal(dict)
     finished = Signal()
     failed = Signal(str)
+    audioPeaks = Signal(object)
 
     def __init__(self, path, audio, parent=None):
         super().__init__(parent)
@@ -119,6 +121,8 @@ class VideoPlayer(QObject):
         self._parse_started = monotonic()
         self._media.parse_with_options(vlc.MediaParseFlag.local, 2000)
         self._install_callbacks()
+        self.audio_bridge = LegacyAudio(self._player, self.audio, vlc, self)
+        self.audio_bridge.peaks.connect(self.audioPeaks.emit)
         self.timer = QTimer(self)
         self.timer.setInterval(15)
         self.timer.timeout.connect(self._tick)
@@ -182,6 +186,7 @@ class VideoPlayer(QObject):
         if not self._closed:
             self._player.audio_set_volume(round(self.audio.volume() * 100))
             self._player.audio_set_mute(self.audio.isMuted() or self._pause_after_seek)
+            self.audio_bridge.apply_volume(self._pause_after_seek)
 
     def hasAudio(self):
         return self._has_audio
@@ -193,6 +198,7 @@ class VideoPlayer(QObject):
         if self._closed:
             return
         self._pause_after_seek = for_seek
+        self.audio_bridge.paused = for_seek
         self._request_play = True
         if not self._prepared:
             self.timer.start()
@@ -210,6 +216,9 @@ class VideoPlayer(QObject):
 
     def pause(self):
         if not self._closed:
+            self.audio_bridge.paused = True
+            if self.audio_bridge.device:
+                self.audio_bridge.sink.suspend()
             self._request_play = False
             self._player.set_pause(1)
             self._set_playing(False)
@@ -218,6 +227,7 @@ class VideoPlayer(QObject):
         if self._closed:
             return
         value = max(0, int(milliseconds))
+        self.audio_bridge.discard()
         if self._player.get_state() in (vlc.State.Ended, vlc.State.Stopped, vlc.State.NothingSpecial):
             self._restart_position = value
             self._seek_sent = None
@@ -237,6 +247,7 @@ class VideoPlayer(QObject):
         self._closed = True
         self.timer.stop()
         self.audio.changed.disconnect(self._apply_audio)
+        self.audio_bridge.close()
         self._media.parse_stop()
         # ctypes releases the GIL while stop waits for worker callbacks. Keep
         # buffers/callbacks alive until the decoder has completely stopped.

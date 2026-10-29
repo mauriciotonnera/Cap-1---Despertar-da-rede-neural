@@ -24,7 +24,7 @@ $vlc = Join-Path $PSScriptRoot '.legacy-downloads\vlc-3.0.23'
 if (-not (Test-Path "$vlc\libvlc.dll")) { throw 'VLC package is incomplete' }
 
 $env:QT_API = 'pyside2'
-& $python -m PyInstaller --noconfirm --clean --onedir --windowed --noupx --name ImageDesk-Legacy --runtime-hook runtime_legacy.py --exclude-module PySide6 --exclude-module PyQt5 --exclude-module PyQt6 --exclude-module qtpy.QtMultimedia --add-data 'test_media.json;.' viewer.py
+& $python -m PyInstaller --noconfirm --clean --onedir --windowed --noupx --name ImageDesk-Legacy --runtime-hook runtime_legacy.py --exclude-module PySide6 --exclude-module PyQt5 --exclude-module PyQt6 --add-data 'test_media.json;.' viewer.py
 if ($LASTEXITCODE -ne 0) { throw 'Legacy executable build failed' }
 $target = Join-Path $PSScriptRoot 'dist\ImageDesk-Legacy'
 New-Item -ItemType Directory -Force -Path "$target\vlc" | Out-Null

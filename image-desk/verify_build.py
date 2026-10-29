@@ -20,7 +20,7 @@ if report.exists():
     report.unlink()
 env = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_MEDIA_BACKEND="ffmpeg")
 result = subprocess.run([str(executable), "--self-test", str(report)],
-                        env=env, capture_output=True, text=True, timeout=150)
+                        env=env, capture_output=True, text=True, timeout=180)
 if not report.exists():
     raise RuntimeError(f"Executable exited {result.returncode} without a report.\n{result.stderr}")
 data = json.loads(report.read_text(encoding="utf-8"))

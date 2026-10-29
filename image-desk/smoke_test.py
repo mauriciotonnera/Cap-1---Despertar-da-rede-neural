@@ -148,7 +148,7 @@ def run(viewer_class, report_path):
             wait(200)
             assert p.player is None and not p.timer.isActive()
             assert window.image.toImage().pixelColor(0, 0).name() == "#123456"
-            assert not window.transport.isVisible()
+            assert window.transport.isVisible() and not window.seek_slider.isEnabled()
             checks.append("Video-to-image switch releases playback and rejects stale frames")
 
             assert not errors, errors
@@ -162,6 +162,8 @@ def run(viewer_class, report_path):
             checks.append("Corrupt-file error and recovery")
             from presentation_test import run_checks
             run_checks(window, root, wait, until, checks)
+            from production_test import run_checks as run_production_checks
+            run_production_checks(window, root, wait, until, checks)
             assert not callback_errors, callback_errors
             # Windows decoders can retain the file handle after EndOfMedia.
             p.clear()

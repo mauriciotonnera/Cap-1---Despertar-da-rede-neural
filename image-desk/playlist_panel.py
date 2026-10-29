@@ -3,7 +3,7 @@
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFrame,
                                QHBoxLayout, QInputDialog, QLabel, QListWidget, QListWidgetItem,
-                               QMessageBox, QPushButton, QVBoxLayout)
+                               QMessageBox, QPushButton, QSlider, QSpinBox, QVBoxLayout)
 
 
 class PlaylistPanel(QFrame):
@@ -70,6 +70,24 @@ class PlaylistPanel(QFrame):
             edits.addWidget(button)
         body.addLayout(edits)
         layout.addLayout(body, 1)
+        item_audio = QHBoxLayout()
+        self.item_volume_label = QLabel("Item volume")
+        item_audio.addWidget(self.item_volume_label)
+        self.item_volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.item_volume_slider.setRange(0, 100)
+        self.item_volume_slider.setValue(100)
+        self.item_volume_slider.setToolTip("Volume for the selected playlist entry. The master volume applies on top.")
+        self.item_volume = QSpinBox()
+        self.item_volume.setRange(0, 100)
+        self.item_volume.setSuffix("%")
+        self.item_volume.setValue(100)
+        self.item_volume.setAccessibleName("Selected playlist item volume")
+        self.item_volume.setMinimumWidth(77)
+        self.item_volume_slider.valueChanged.connect(self.change_item_volume)
+        self.item_volume.valueChanged.connect(self.change_item_volume)
+        item_audio.addWidget(self.item_volume_slider, 1)
+        item_audio.addWidget(self.item_volume)
+        layout.addLayout(item_audio)
         controls = QHBoxLayout()
         self.start = QPushButton("Start playlist")
         self.start.clicked.connect(self.toggle)
@@ -101,6 +119,7 @@ class PlaylistPanel(QFrame):
         controller.itemsChanged.connect(self.refresh_items)
         controller.playlistsChanged.connect(self.refresh_playlists)
         controller.changed.connect(self.refresh_state)
+        controller.volumeChanged.connect(self.volume_changed)
         self.refresh_playlists()
         self.refresh_items()
 
@@ -163,14 +182,38 @@ class PlaylistPanel(QFrame):
             c.pause()
 
     def refresh_items(self):
+        self.list.blockSignals(True)
         self.list.clear()
         for i, path in enumerate(self.controller.paths):
             suffix = " — missing" if not path.is_file() else ""
-            item = QListWidgetItem(f"{i + 1:02}  {path.name}{suffix}")
+            item = QListWidgetItem(f"{i + 1:02}  {path.name}{suffix}  ·  {self.controller.current_playlist.volumes[i]}%")
             item.setToolTip(str(path))
             self.list.addItem(item)
+        self.list.blockSignals(False)
         self._last_index = -2
         self.refresh_state()
+
+    def change_item_volume(self, value):
+        rows = self.selected_rows()
+        if len(rows) == 1:
+            self.controller.set_item_volume(rows[0], value)
+
+    def volume_changed(self, row, value):
+        path = self.controller.paths[row]
+        suffix = " — missing" if not path.is_file() else ""
+        self.list.item(row).setText(f"{row + 1:02}  {path.name}{suffix}  ·  {value}%")
+        self.update_volume_editor()
+
+    def update_volume_editor(self):
+        rows = self.selected_rows()
+        single = len(rows) == 1 and 0 <= rows[0] < len(self.controller.paths)
+        self.item_volume_label.setText(f"Item {rows[0] + 1} volume" if single else "Select one item")
+        for widget in (self.item_volume_slider, self.item_volume):
+            widget.setEnabled(single)
+            if single:
+                widget.blockSignals(True)
+                widget.setValue(self.controller.current_playlist.volumes[rows[0]])
+                widget.blockSignals(False)
 
     def refresh_state(self):
         c = self.controller
@@ -195,6 +238,7 @@ class PlaylistPanel(QFrame):
     def update_buttons(self):
         c = self.controller
         rows = self.selected_rows()
+        self.update_volume_editor()
         self.add_button.setEnabled(not c.active)
         self.open_button.setEnabled(not c.active)
         self.selector.setEnabled(not c.active)

@@ -17,6 +17,7 @@ class Playlist(QObject):
     itemsChanged = Signal()
     playlistsChanged = Signal()
     notice = Signal(str)
+    volumeChanged = Signal(int, int)
 
     def __init__(self, playback, loader, parent=None):
         super().__init__(parent)
@@ -104,6 +105,7 @@ class Playlist(QObject):
 
     def _reset_selection(self):
         self.cancel_transition()
+        self._bad.clear()
         self.index = -1
         self._elapsed = 0.0
         self.status = "Ready"
@@ -112,12 +114,12 @@ class Playlist(QObject):
         self.changed.emit()
 
     def export_playlists(self):
-        return [replace(entry, paths=entry.paths.copy()) for entry in self.playlists]
+        return [replace(entry, paths=entry.paths.copy(), volumes=entry.volumes.copy()) for entry in self.playlists]
 
     def replace_playlists(self, entries, selected=0):
         if self.active:
             raise ValueError("Stop playback before opening a session.")
-        copied = [replace(entry, paths=entry.paths.copy()) for entry in entries]
+        copied = [replace(entry, paths=entry.paths.copy(), volumes=entry.volumes.copy()) for entry in entries]
         validate_playlists(copied, selected)
         self.playlists, self.selected_playlist = copied, selected
         self._reset_selection()
@@ -134,30 +136,44 @@ class Playlist(QObject):
             elapsed += monotonic() - self._started
         return max(0, int(self.still_seconds * 1000 - elapsed * 1000))
 
-    def set_items(self, paths):
+    def set_items(self, paths, volumes=None):
         if self.active:
             return
         self.paths = [Path(path).expanduser().resolve() for path in paths]
+        self.current_playlist.volumes = list(volumes) if volumes is not None else [100] * len(self.paths)
         self.index = -1
+        self._bad.clear()
         self.status = "Ready"
         self.itemsChanged.emit()
         self.changed.emit()
 
     def add(self, paths):
-        self.set_items(self.paths + list(paths))
+        paths = list(paths)
+        self.set_items(self.paths + paths, self.current_playlist.volumes + [100] * len(paths))
 
     def remove(self, rows):
         excluded = set(rows)
-        self.set_items([p for i, p in enumerate(self.paths) if i not in excluded])
+        self.set_items([p for i, p in enumerate(self.paths) if i not in excluded],
+                       [v for i, v in enumerate(self.current_playlist.volumes) if i not in excluded])
 
     def move(self, row, direction):
         target = row + direction
         if self.active or not (0 <= row < len(self.paths) and 0 <= target < len(self.paths)):
             return row
         paths = self.paths.copy()
+        volumes = self.current_playlist.volumes.copy()
         paths[row], paths[target] = paths[target], paths[row]
-        self.set_items(paths)
+        volumes[row], volumes[target] = volumes[target], volumes[row]
+        self.set_items(paths, volumes)
         return target
+
+    def set_item_volume(self, row, value):
+        if not 0 <= row < len(self.paths) or type(value) is not int or not 0 <= value <= 100:
+            return
+        self.current_playlist.volumes[row] = value
+        if row == self.index:
+            self.playback.set_item_volume(value / 100)
+        self.volumeChanged.emit(row, value)
 
     def start(self, index=0):
         if not self.paths:
@@ -242,6 +258,7 @@ class Playlist(QObject):
         self._elapsed = 0.0
         self._loading = True
         try:
+            self.playback.set_item_volume(self.current_playlist.volumes[index] / 100)
             ok = self.loader(self.paths[index])
         finally:
             self._loading = False
