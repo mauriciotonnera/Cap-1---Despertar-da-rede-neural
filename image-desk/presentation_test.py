@@ -244,8 +244,10 @@ def run_collection_checks(window, root, wait, until, checks):
     assert panel.seconds.value() == 1.5 and panel.repeat.isChecked()
     c.start()
     c.pause()
-    assert not panel.selector.isEnabled() and not panel.new_button.isEnabled()
-    assert not c.select_playlist(1) and c.selected_playlist == 0
+    assert panel.selector.isEnabled() and panel.new_button.isEnabled()
+    assert c.select_playlist(1) and c.selected_playlist == 1
+    assert c.active and c.paused and c.playback_playlist.name == "Opening"
+    c.select_playlist(0)
     name_dialog(panel.rename_button, "Opening set")
     assert c.active and c.paused and c.current_playlist.name == "Opening set"
     c.stop()

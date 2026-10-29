@@ -97,10 +97,13 @@ class VideoPlayer(QObject):
     failed = Signal(str)
     audioPeaks = Signal(object)
 
-    def __init__(self, path, audio, parent=None):
+    def __init__(self, path, audio, parent=None, thumbnail=False):
         super().__init__(parent)
         self.audio = audio
+        self.thumbnail = thumbnail
         self._media = instance().media_new_path(str(path))
+        if thumbnail:
+            self._media.add_option(":no-audio")
         self._player = instance().media_player_new()
         self._player.set_media(self._media)
         self._closed = self._done = self._loop = self._has_frame = False
@@ -121,8 +124,9 @@ class VideoPlayer(QObject):
         self._parse_started = monotonic()
         self._media.parse_with_options(vlc.MediaParseFlag.local, 2000)
         self._install_callbacks()
-        self.audio_bridge = LegacyAudio(self._player, self.audio, vlc, self)
-        self.audio_bridge.peaks.connect(self.audioPeaks.emit)
+        self.audio_bridge = None if thumbnail else LegacyAudio(self._player, self.audio, vlc, self)
+        if self.audio_bridge:
+            self.audio_bridge.peaks.connect(self.audioPeaks.emit)
         self.timer = QTimer(self)
         self.timer.setInterval(15)
         self.timer.timeout.connect(self._tick)
@@ -142,6 +146,9 @@ class VideoPlayer(QObject):
                 # ProRes 64x48 in a 64x64 allocation). Request the visible,
                 # rotated dimensions from the parsed track metadata.
                 w, h = self._frame_size or (int(width[0]), int(height[0]))
+                if self.thumbnail:
+                    scale = min(1.0, 288 / max(1, w), 162 / max(1, h))
+                    w, h = max(1, round(w * scale)), max(1, round(h * scale))
                 width[0], height[0] = w, h
                 if not (0 < w <= 16384 and 0 < h <= 16384) or w * h > 67108864:
                     raise ValueError("Video dimensions exceed this decoder's memory limit.")
@@ -183,7 +190,7 @@ class VideoPlayer(QObject):
         self._player.video_set_format_callbacks(setup, None)
 
     def _apply_audio(self):
-        if not self._closed:
+        if not self._closed and self.audio_bridge:
             self._player.audio_set_volume(round(self.audio.volume() * 100))
             self._player.audio_set_mute(self.audio.isMuted() or self._pause_after_seek)
             self.audio_bridge.apply_volume(self._pause_after_seek)
@@ -198,7 +205,8 @@ class VideoPlayer(QObject):
         if self._closed:
             return
         self._pause_after_seek = for_seek
-        self.audio_bridge.paused = for_seek
+        if self.audio_bridge:
+            self.audio_bridge.paused = for_seek
         self._request_play = True
         if not self._prepared:
             self.timer.start()
@@ -216,9 +224,10 @@ class VideoPlayer(QObject):
 
     def pause(self):
         if not self._closed:
-            self.audio_bridge.paused = True
-            if self.audio_bridge.device:
-                self.audio_bridge.sink.suspend()
+            if self.audio_bridge:
+                self.audio_bridge.paused = True
+                if self.audio_bridge.device:
+                    self.audio_bridge.sink.suspend()
             self._request_play = False
             self._player.set_pause(1)
             self._set_playing(False)
@@ -227,7 +236,8 @@ class VideoPlayer(QObject):
         if self._closed:
             return
         value = max(0, int(milliseconds))
-        self.audio_bridge.discard()
+        if self.audio_bridge:
+            self.audio_bridge.discard()
         if self._player.get_state() in (vlc.State.Ended, vlc.State.Stopped, vlc.State.NothingSpecial):
             self._restart_position = value
             self._seek_sent = None
@@ -247,7 +257,8 @@ class VideoPlayer(QObject):
         self._closed = True
         self.timer.stop()
         self.audio.changed.disconnect(self._apply_audio)
-        self.audio_bridge.close()
+        if self.audio_bridge:
+            self.audio_bridge.close()
         self._media.parse_stop()
         # ctypes releases the GIL while stop waits for worker callbacks. Keep
         # buffers/callbacks alive until the decoder has completely stopped.

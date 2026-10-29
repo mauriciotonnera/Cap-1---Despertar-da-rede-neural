@@ -50,6 +50,7 @@ class Playback(QObject):
             self.audio.mutedChanged.connect(self._emit_levels)
         self.loop = False
         self.playing = False
+        self.stopped = False
         self.ended = False
         self.error = ""
         self.position = 0
@@ -114,6 +115,7 @@ class Playback(QObject):
             self.movie = None
         self.path = None
         self.playing = self.ended = self.seekable = False
+        self.stopped = False
         self.error = ""
         self.position = self.duration = self.frame_count = self._gif_remaining = 0
         self._size = None
@@ -220,6 +222,7 @@ class Playback(QObject):
     def play(self):
         if self.error:
             return
+        self.stopped = False
         if self.kind == "video" and self.player:
             if self.ended:
                 self.player.setPosition(0)
@@ -238,6 +241,7 @@ class Playback(QObject):
         if self.error:
             return
         self.ended = False
+        self.stopped = False
         if self.kind == "video" and self.player:
             self.player.setPosition(0)
             self.player.play()
@@ -249,6 +253,23 @@ class Playback(QObject):
                 self._publish_gif()
             else:
                 self._fail("The GIF could not restart.")
+
+    def stop(self):
+        """Silence and rewind, retaining a frame for the operator and output."""
+        self.pause()
+        self.playing = self.ended = False
+        self.stopped = True
+        if self.kind == "video" and self.player:
+            self.player.setPosition(0)
+        elif self.kind == "gif" and self.movie:
+            self.timer.stop()
+            self._gif_remaining = 0
+            if self._gif_jump(0):
+                self._publish_gif()
+                self._gif_remaining = max(10, self.movie.nextFrameDelay())
+        self.position = 0
+        self.raw_levels = (0.0, 0.0)
+        self.changed.emit()
 
     def seek(self, position: int):
         if not self.seekable or self.error:

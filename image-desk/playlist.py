@@ -24,6 +24,8 @@ class Playlist(QObject):
         self.playback, self.loader = playback, loader
         self.playlists = [PlaylistData("Playlist 1")]
         self.selected_playlist = 0
+        self.playing_playlist = None
+        self.detached = False
         self.index = -1
         self.active = self.paused = False
         self.status = "Ready"
@@ -52,12 +54,25 @@ class Playlist(QObject):
         self.current_playlist.paths = value
 
     @property
+    def playback_playlist(self):
+        return self.playing_playlist or self.current_playlist
+
+    @property
+    def playing_paths(self):
+        return self.playback_playlist.paths
+
+    @property
+    def selected_is_playing(self):
+        return self.current_playlist is self.playing_playlist
+
+    @property
     def repeat(self):
         return self.current_playlist.repeat
 
     @repeat.setter
     def repeat(self, value):
         self.current_playlist.repeat = value
+        self.changed.emit()
 
     @property
     def still_seconds(self):
@@ -66,6 +81,7 @@ class Playlist(QObject):
     @still_seconds.setter
     def still_seconds(self, value):
         self.current_playlist.still_seconds = value
+        self.changed.emit()
 
     def suggested_name(self):
         names = {entry.name.casefold() for entry in self.playlists}
@@ -82,8 +98,6 @@ class Playlist(QObject):
         return name
 
     def add_playlist(self, name):
-        if self.active:
-            raise ValueError("Stop playback before adding a playlist.")
         if len(self.playlists) >= 100:
             raise ValueError("A session can contain up to 100 playlists.")
         entry = PlaylistData(self._name(name))
@@ -93,20 +107,25 @@ class Playlist(QObject):
     def rename_playlist(self, name):
         self.current_playlist.name = self._name(name, self.selected_playlist)
         self.playlistsChanged.emit()
+        self.changed.emit()
 
     def select_playlist(self, selected):
-        if self.active or not 0 <= selected < len(self.playlists):
+        if not 0 <= selected < len(self.playlists):
             return False
         if selected == self.selected_playlist:
             return True
         self.selected_playlist = selected
-        self._reset_selection()
+        self.playlistsChanged.emit()
+        self.itemsChanged.emit()
+        self.changed.emit()
         return True
 
     def _reset_selection(self):
         self.cancel_transition()
         self._bad.clear()
         self.index = -1
+        self.playing_playlist = None
+        self.detached = False
         self._elapsed = 0.0
         self.status = "Ready"
         self.playlistsChanged.emit()
@@ -117,10 +136,9 @@ class Playlist(QObject):
         return [replace(entry, paths=entry.paths.copy(), volumes=entry.volumes.copy()) for entry in self.playlists]
 
     def replace_playlists(self, entries, selected=0):
-        if self.active:
-            raise ValueError("Stop playback before opening a session.")
         copied = [replace(entry, paths=entry.paths.copy(), volumes=entry.volumes.copy()) for entry in entries]
         validate_playlists(copied, selected)
+        self.stop()
         self.playlists, self.selected_playlist = copied, selected
         self._reset_selection()
 
@@ -134,52 +152,81 @@ class Playlist(QObject):
         elapsed = self._elapsed
         if self.active and not self.paused and not self._loading:
             elapsed += monotonic() - self._started
-        return max(0, int(self.still_seconds * 1000 - elapsed * 1000))
+        return max(0, int(self.playback_playlist.still_seconds * 1000 - elapsed * 1000))
 
     def set_items(self, paths, volumes=None):
-        if self.active:
-            return
+        if self.selected_is_playing:
+            self.stop(pause=False)
+            self.playing_playlist = None
+            self.index = -1
+            self.detached = False
         self.paths = [Path(path).expanduser().resolve() for path in paths]
         self.current_playlist.volumes = list(volumes) if volumes is not None else [100] * len(self.paths)
-        self.index = -1
-        self._bad.clear()
-        self.status = "Ready"
+        if not self.active and self.playing_playlist is None:
+            self.index = -1
+            self._bad.clear()
+            self.status = "Ready"
         self.itemsChanged.emit()
         self.changed.emit()
 
     def add(self, paths):
-        paths = list(paths)
-        self.set_items(self.paths + paths, self.current_playlist.volumes + [100] * len(paths))
+        paths = [Path(path).expanduser().resolve() for path in paths]
+        self.paths.extend(paths)
+        self.current_playlist.volumes.extend([100] * len(paths))
+        self.itemsChanged.emit()
+        self.changed.emit()
 
     def remove(self, rows):
         excluded = set(rows)
-        self.set_items([p for i, p in enumerate(self.paths) if i not in excluded],
-                       [v for i, v in enumerate(self.current_playlist.volumes) if i not in excluded])
+        kept = [i for i in range(len(self.paths)) if i not in excluded]
+        mapping = {old: new for new, old in enumerate(kept)}
+        if self.selected_is_playing:
+            if self.detached or self.index not in mapping:
+                # Let the removed on-air item finish; its successor is the
+                # first retained row after it, even with duplicate file paths.
+                self.index = sum(i <= self.index for i in kept) - 1
+                self.detached = True
+            else:
+                self.index = mapping[self.index]
+            self._bad = {mapping[i] for i in self._bad if i in mapping}
+        self.paths = [self.paths[i] for i in kept]
+        self.current_playlist.volumes = [self.current_playlist.volumes[i] for i in kept]
+        self.itemsChanged.emit()
+        self.changed.emit()
 
     def move(self, row, direction):
         target = row + direction
-        if self.active or not (0 <= row < len(self.paths) and 0 <= target < len(self.paths)):
+        if not (0 <= row < len(self.paths) and 0 <= target < len(self.paths)):
             return row
         paths = self.paths.copy()
         volumes = self.current_playlist.volumes.copy()
         paths[row], paths[target] = paths[target], paths[row]
         volumes[row], volumes[target] = volumes[target], volumes[row]
-        self.set_items(paths, volumes)
+        if self.selected_is_playing:
+            def moved(i):
+                return target if i == row else row if i == target else i
+            self.index = moved(self.index + 1) - 1 if self.detached else moved(self.index)
+            self._bad = {moved(i) for i in self._bad}
+        self.paths, self.current_playlist.volumes = paths, volumes
+        self.itemsChanged.emit()
+        self.changed.emit()
         return target
 
     def set_item_volume(self, row, value):
         if not 0 <= row < len(self.paths) or type(value) is not int or not 0 <= value <= 100:
             return
         self.current_playlist.volumes[row] = value
-        if row == self.index:
+        if self.selected_is_playing and not self.detached and row == self.index:
             self.playback.set_item_volume(value / 100)
         self.volumeChanged.emit(row, value)
 
-    def start(self, index=0):
-        if not self.paths:
+    def start(self, index=0, source=None):
+        source = source or self.current_playlist
+        if not source.paths:
             return
         if not self.active:
             self._saved_loop = self.playback.loop
+        self.playing_playlist = source
         self.active, self.paused = True, False
         self.status = "Playing"
         self._bad.clear()
@@ -188,7 +235,20 @@ class Playlist(QObject):
         self.playback.set_loop(False)
         self._loading = False
         self.timer.start()
-        self._load(max(0, min(index, len(self.paths) - 1)))
+        self._load(max(0, min(index, len(self.playing_paths) - 1)))
+
+    def set_clip_loop(self, loop):
+        self._saved_loop = bool(loop)
+        self.cancel_transition()
+        self.playback.set_loop(bool(loop))
+        if self.active and self.playback.ended:
+            if loop:
+                self.playback.seek(0)
+                if not self.paused:
+                    self.playback.play()
+            elif not self.paused:
+                self._queue_advance(False)
+        self.changed.emit()
 
     def pause(self):
         if not self.active or self.paused:
@@ -230,7 +290,14 @@ class Playlist(QObject):
         if self.active:
             self.paused = False
             self.status = "Playing"
-            self._load(self.index)
+            if self.detached:
+                self.cancel_transition()
+                self._elapsed = 0.0
+                self._started = monotonic()
+                self.playback.restart()
+                self.changed.emit()
+            else:
+                self._load(self.index)
 
     def cancel_transition(self):
         self._generation += 1
@@ -239,10 +306,13 @@ class Playlist(QObject):
     def step(self, direction):
         if not self.active:
             return
+        if not self.playing_paths:
+            self.stop(status="Finished")
+            return
         target = self.index + direction
-        if self.repeat:
-            target %= len(self.paths)
-        elif target >= len(self.paths):
+        if self.playback_playlist.repeat:
+            target %= len(self.playing_paths)
+        elif target >= len(self.playing_paths):
             self.stop(status="Finished")
             return
         else:
@@ -255,26 +325,27 @@ class Playlist(QObject):
         self._generation += 1
         self._pending = False
         self.index = index
+        self.detached = False
         self._elapsed = 0.0
         self._loading = True
         try:
-            self.playback.set_item_volume(self.current_playlist.volumes[index] / 100)
-            ok = self.loader(self.paths[index])
+            self.playback.set_item_volume(self.playback_playlist.volumes[index] / 100)
+            ok = self.loader(self.playing_paths[index])
         finally:
             self._loading = False
         self._started = monotonic()
         self.changed.emit()
         if not ok:
-            self.notice.emit(f"Skipped unavailable media: {self.paths[index].name}")
+            self.notice.emit(f"Skipped unavailable media: {self.playing_paths[index].name}")
             self._queue_advance(True)
 
     def _media_changed(self):
-        if self.active and not self.paused and not self._loading and self.playback.ended:
+        if self.active and not self.paused and not self._loading and self.playback.ended and not self.playback.loop:
             self._queue_advance(False)
 
     def _media_failed(self, message):
         if self.active and not self._loading:
-            self.notice.emit(f"Skipped {self.paths[self.index].name}: {message}")
+            self.notice.emit(f"Skipped current item: {message}")
             self._queue_advance(True)
 
     def _tick(self):
@@ -285,7 +356,7 @@ class Playlist(QObject):
     def _queue_advance(self, failed):
         if not self.active:
             return
-        if failed:
+        if failed and not self.detached:
             self._bad.add(self.index)
         if self._pending:
             return
@@ -298,14 +369,17 @@ class Playlist(QObject):
             self._pending = False
             if not self.active or self.paused:
                 return
-            if len(self._bad) == len(self.paths):
+            if not self.playing_paths:
+                self.stop(status="Finished")
+                return
+            if len(self._bad) == len(self.playing_paths):
                 self.stop(status="No playable items")
                 self.notice.emit("Playlist stopped: all items are missing or unreadable.")
                 return
             target = self.index + 1
-            for _ in self.paths:
-                if target >= len(self.paths):
-                    if not self.repeat:
+            for _ in self.playing_paths:
+                if target >= len(self.playing_paths):
+                    if not self.playback_playlist.repeat:
                         self.stop(status="Finished")
                         return
                     target = 0

@@ -99,7 +99,7 @@ def run_checks(window, root, wait, until, checks):
     c.stop()
     window.load_image(root / "stereo.mp4")
     assert p.item_volume == 1.0 and window.volume_slider.value() == 50
-    checks.append("Independent duplicate-item volumes survive move/remove/save; legacy sessions default to 100%; five-button transport and live gain")
+    checks.append("Independent duplicate-item volumes survive move/remove/save; legacy sessions default to 100%; transport and live gain")
 
     # Exercise real pointer events and verify frames change before mouse release.
     p.set_loop(False)

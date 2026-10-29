@@ -10,6 +10,7 @@ class PlaylistPanel(QFrame):
     addRequested = Signal()
     openRequested = Signal()
     saveRequested = Signal()
+    stopRequested = Signal()
 
     def __init__(self, controller, parent=None):
         super().__init__(parent)
@@ -39,7 +40,7 @@ class PlaylistPanel(QFrame):
         self.selector.setMinimumWidth(120)
         self.selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.selector.setMinimumContentsLength(10)
-        self.selector.setToolTip("Select a playlist. Stop playback before switching playlists.")
+        self.selector.setToolTip("Select a playlist to edit while the current one keeps playing. Start playlist takes it live.")
         self.selector.currentIndexChanged.connect(self.select_playlist)
         self.new_button = QPushButton("+ Add playlist")
         self.new_button.clicked.connect(self.new_playlist)
@@ -92,7 +93,7 @@ class PlaylistPanel(QFrame):
         self.start = QPushButton("Start playlist")
         self.start.clicked.connect(self.toggle)
         self.stop = QPushButton("Stop")
-        self.stop.clicked.connect(lambda: controller.stop())
+        self.stop.clicked.connect(self.stopRequested.emit)
         self.repeat = QCheckBox("Repeat playlist")
         self.repeat.toggled.connect(self.change_repeat)
         self.seconds = QDoubleSpinBox()
@@ -174,7 +175,7 @@ class PlaylistPanel(QFrame):
 
     def toggle(self):
         c = self.controller
-        if not c.active:
+        if not c.active or not c.selected_is_playing:
             c.start(max(0, self.list.currentRow()))
         elif c.paused:
             c.resume()
@@ -217,20 +218,22 @@ class PlaylistPanel(QFrame):
 
     def refresh_state(self):
         c = self.controller
-        self.start.setText("Resume" if c.active and c.paused else "Pause playlist" if c.active else "Start playlist")
+        live = c.active and c.selected_is_playing
+        self.start.setText("Resume" if live and c.paused else "Pause playlist" if live else "Start playlist")
         self.start.setEnabled(bool(c.paths))
         self.stop.setEnabled(c.active)
-        if c.index != self._last_index:
-            self._last_index = c.index
-            if c.index >= 0:
-                self.list.setCurrentRow(c.index)
-                self.list.scrollToItem(self.list.item(c.index))
-        if c.index >= 0:
-            next_index = c.index + 1
-            if next_index >= len(c.paths) and c.repeat:
-                next_index = 0
-            next_name = c.paths[next_index].name if next_index < len(c.paths) else "End of playlist"
-            self.status.setText(f"{c.status} · Item {c.index + 1} of {len(c.paths)} · Next: {next_name}")
+        row = c.index if c.selected_is_playing and not c.detached else -1
+        if row != self._last_index:
+            self._last_index = row
+            if 0 <= row < len(c.paths):
+                self.list.setCurrentRow(row)
+                self.list.scrollToItem(self.list.item(row))
+        if c.active:
+            item = "Current item removed; finishing playback" if c.detached else f"Item {c.index + 1} of {len(c.playing_paths)}"
+            self.status.setText(f"{c.status}: {c.playback_playlist.name} · {item}" +
+                ("" if live else f" · Editing: {c.current_playlist.name}"))
+        elif c.selected_is_playing and c.index >= 0:
+            self.status.setText(f"{c.status} · Item {c.index + 1} of {len(c.paths)}")
         else:
             self.status.setText(f"{len(c.paths)} item(s) · Double-click a file or start the playlist.")
         self.update_buttons()
@@ -239,11 +242,7 @@ class PlaylistPanel(QFrame):
         c = self.controller
         rows = self.selected_rows()
         self.update_volume_editor()
-        self.add_button.setEnabled(not c.active)
-        self.open_button.setEnabled(not c.active)
-        self.selector.setEnabled(not c.active)
-        self.new_button.setEnabled(not c.active)
-        self.new_button.setToolTip("Stop playback before adding a playlist." if c.active else "Create and name another playlist")
-        self.remove.setEnabled(not c.active and bool(rows))
-        self.up.setEnabled(not c.active and len(rows) == 1 and rows[0] > 0)
-        self.down.setEnabled(not c.active and len(rows) == 1 and rows[0] < len(c.paths) - 1)
+        self.new_button.setToolTip("Create and name another playlist while playback continues")
+        self.remove.setEnabled(bool(rows))
+        self.up.setEnabled(len(rows) == 1 and rows[0] > 0)
+        self.down.setEnabled(len(rows) == 1 and rows[0] < len(c.paths) - 1)

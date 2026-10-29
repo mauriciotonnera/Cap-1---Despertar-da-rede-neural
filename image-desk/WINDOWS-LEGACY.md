@@ -1,4 +1,4 @@
-Image Desk 3.3 — Legacy Windows edition
+Image Desk 3.4 — Legacy Windows edition
 
 Target: Windows 7 SP1, Windows 8/8.1, Windows 10 and Windows 11.
 Choose x86 for 32-bit Windows; choose x64 for 64-bit Windows. The modern
@@ -17,9 +17,10 @@ The same interface and features are included: still images, MP4/MOV, animated
 GIFs, play once/loop, multiple named playlists, sessions, top-left/center
 alignment, fullscreen on a second display, blackout and remaining time.
 Stereo audio meters, per-item volumes, live skimming, transport buttons and
-playlist remaining time are included. Audio uses VLC decoding and a timestamped
+playlist remaining time are included. Version 3.4 adds Stop/rewind, live playlist
+editing and a silent next-item thumbnail beside the preview. Audio uses VLC decoding and a timestamped
 Qt 5 PCM output, so metering and output share the same audio samples.
-New sessions are interchangeable with other Image Desk 3.3 builds. Sessions
+New sessions are interchangeable with Image Desk 3.3 and 3.4 builds. Sessions
 from versions 3.0–3.2 still open, with each item defaulting to 100% volume.
 
 The legacy edition uses software video decoding so it does not depend on a

@@ -26,6 +26,8 @@ class TransportButton(QPushButton):
         if self.action == "pause":
             p.drawRect(QRectF(13, 12, 5, 16))
             p.drawRect(QRectF(22, 12, 5, 16))
+        elif self.action == "stop":
+            p.drawRect(QRectF(12, 12, 16, 16))
         elif self.action == "restart":
             p.setPen(QPen(color, 2.6))
             p.setBrush(Qt.BrushStyle.NoBrush)

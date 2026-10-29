@@ -1,16 +1,16 @@
-# Image Desk 3.3
+# Image Desk 3.4
 
 Image Desk keeps a preview and file information on your main display, with a clean fullscreen view on a selected display. Version 3.0 adds mixed-media playlists, automatic playback, presentation blackout, a remaining-time display and portable saved sessions, keeping the original dark interface.
 
 Version 3.1 adds selectable **Top left (0, 0)** or **Center** alignment and multiple named playlists. Every playlist keeps its own files, order, still-image duration and repeat setting. Sessions save the entire collection and alignment choice.
 
-Version 3.3 adds a separate **Legacy Windows** edition targeting updated Windows 7 SP1 through Windows 11, in both x86 and x64 builds. It uses Python 3.8.10, Qt 5.15.2 / PySide2 and bundled VLC 3 decoding while sharing the same interface, playlists and session format. See [Legacy Windows requirements and verification](WINDOWS-LEGACY.md).
+Version 3.2 adds a separate **Legacy Windows** edition targeting updated Windows 7 SP1 through Windows 11, in both x86 and x64 builds. It uses Python 3.8.10, Qt 5.15.2 / PySide2 and bundled VLC 3 decoding while sharing the same interface, playlists and session format. See [Legacy Windows requirements and verification](WINDOWS-LEGACY.md).
 
 The modern Windows build requires Windows 10/11. The legacy build is a portable folder: extract the entire ZIP and run `ImageDesk-Legacy.exe`, keeping its DLLs and subfolders together. Native builds are automatically exercised on current Windows runners; Windows 7/8/8.1 remain target platforms pending tests on those actual OS versions. A dependency audit is not a substitute for that testing.
 
 ## Use the app
 
-Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 3.3 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
+Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 3.4 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
 
 - Click **Open media…** or drop a file onto the window. Images, MP4, MOV and animated GIF files use the same preview and file-information panel.
 - Videos and animated GIFs start playing when opened. **Play once** stops and holds the final frame. **Loop** repeats the current file until you pause it or open another file. This choice also overrides the loop count embedded in a GIF and stays selected as you change files during the session.
@@ -25,15 +25,15 @@ Keyboard: **Ctrl+O** (Windows) or **Command+O** (Mac) opens a file; **F11** togg
 
 ## Playlists and automatic playback
 
-Use **+ Add playlist** to create and name another playlist, **Rename…** to change the current playlist's name, and the playlist dropdown to switch between them. Names must be unique and contain 1–80 characters. Adding a playlist selects the new empty list; previous lists keep their media and settings. Use Stop before adding or switching playlists. Renaming is available during playback too.
+Use **+ Add playlist** to create and name another playlist, **Rename…** to change the current playlist's name, and the playlist dropdown to switch between them. Names must be unique and contain 1–80 characters. Adding a playlist selects the new empty list; previous lists keep their media and settings. All playlist controls remain available during playback. Selecting or adding a playlist changes the list being edited; the on-air playlist continues. Click **Start playlist** or double-click a row to take the selected list live. The status line identifies the playing and edited playlists.
 
 1. Select the playlist you want to edit, then click **Add files…** to select several images, videos or GIFs. Dropping multiple media files onto the main window also adds them to that playlist. Duplicate files are allowed.
 2. Select an item and use the **up/down buttons** to change its position. Select one or more items and click **Remove** to remove them from the list; original files are never deleted.
 3. Set **Stills** to the display duration for still images (0.5–3,600 seconds) in this playlist. Single-frame GIFs use this duration too. Videos and animated GIFs play through once before advancing.
-4. Click **Start playlist** to begin from the selected item (or the first item). Double-clicking an item starts the playlist there. **Pause playlist / Resume** and **Space** pause or resume the entire sequence, including a still image's countdown. **Stop** pauses the current item and ends automatic advance. Previous/Next follow the active playlist.
-5. Enable **Repeat playlist** to repeat this playlist's full sequence. Without repeat, the last item remains visible when finished. The individual clip's Play once/Loop setting is temporarily suspended during a playlist, then restored when it stops. Playback stays within the selected playlist and does not automatically move into another named playlist.
+4. Click **Start playlist** to begin from the selected item (or the first item). Double-clicking an item starts the playlist there. **Pause playlist / Resume** and **Space** pause or resume the entire sequence, including a still image's countdown. **Stop** silences and rewinds the current item, ends automatic advance, and holds the first frame. **Play** restarts the stopped sequence from that item. Previous/Next follow the active playlist.
+5. Enable **Repeat playlist** to repeat this playlist's full sequence. Without repeat, the last item remains visible when finished. Starting a playlist selects Play once for automatic advance. You can change **Play once / Loop** while it runs: Loop repeats the current clip until you choose Play once or Next. Repeat playlist controls the whole sequence independently. Playback stays within the on-air playlist and does not automatically move into another named playlist.
 
-The panel shows the current item number and next file. Stop playback before adding, removing or reordering items. Missing or unreadable items are skipped; an entirely unreadable repeating list stops instead of cycling forever. Clicking **Open media…** opens a standalone file and stops playlist automation. The **Playlist** toolbar button hides or reveals the panel, and its divider can be dragged to resize it.
+The panel shows the playing playlist and current item. Adding files, reordering, removing, naming and adjusting levels work during playback. Moving an on-air row preserves its playback position and volume. Removing it lets the loaded item finish before advancing to the next retained row; removing all rows ends the sequence after that item. Missing or unreadable items are skipped; an entirely unreadable repeating list stops instead of cycling forever. Clicking **Open media…** opens a standalone file and stops playlist automation. The **Playlist** toolbar button hides or reveals the panel, and its divider can be dragged to resize it.
 
 ## Presentation controls
 
@@ -49,11 +49,19 @@ Use **Open session…**, drop a session file onto the app, or pass it on the com
 
 Existing Image Desk 3.0/3.0.1 sessions open as one playlist named **Playlist 1**. Version 1 and 2 sessions retain their media and settings, with each item's volume defaulting to 100%. New sessions use format version 3 and require Image Desk 3.3 or later. Up to 100 playlists and 10,000 media entries in total can be saved in one session.
 
+## Live controls and next preview (3.4)
+
+- The square **Stop** button sits beside Play. It rewinds video/GIF to its first frame and resets a still image's timer. The Stop button in the playlist panel performs the same action.
+- **UP NEXT**, to the left of the main preview, shows a small thumbnail and filename for the actual next cue. It supports video, GIF and still images, follows live edits and playlist repeat, and marks a looping current clip or the end of the playlist. Before playback it shows the selected starting item.
+- Thumbnail decoding is silent and separate from the on-air player. A bounded cache avoids repeated decoding. Missing/unreadable files have a text fallback; the thumbnail never appears on the fullscreen output.
+- All editing, presentation, volume and loop controls are available during playback. Buttons that require a selection or loaded media remain context-sensitive. Opening a new media file or session deliberately replaces the current show; canceling a file dialog leaves it playing.
+- When another playlist is selected for preparation, its countdown shows that list's full duration. The current-item clock and main transport still follow the on-air media.
+
 ## Audio monitoring and transport (3.3)
 
 - The stereo meter beside the main preview shows decoded **sample peaks in dBFS**, with a green/yellow/red scale, peak holds and full-scale indicators. Click it to reset peak holds. It follows item volume, master volume and mute, before the operating system's mixer. Mono appears on both bars; multichannel sources show front L/R in modern builds and the stereo mix in the legacy build. It is not a loudness (LUFS) or true-peak meter. The meter stays on the operator screen.
 - Select any playlist row to adjust **Item volume** from 0–100%. Each entry has its own value, even when the same file appears twice. Its percentage appears in the row. Changes to the playing entry take effect immediately; values follow entries when reordered and are saved in sessions. **Master** remains independent: 50% item × 80% master = 40% output. Opening standalone media resets its item volume to 100%.
-- **Previous, Pause, Play, Restart and Next** use round icon buttons beneath the preview. They control the active playlist, including timed stills; otherwise they control the current file and its folder. Space still toggles play/pause.
+- **Previous, Pause, Play, Stop, Restart and Next** use round icon buttons beneath the preview. They control the active playlist, including timed stills; otherwise they control the current file and its folder. Space still toggles play/pause.
 - Drag the playhead to **skim video frames during the drag**. Playback and playlist timing pause while dragging, then restore their previous play/pause state on release. The fullscreen output follows the same frames. Seeking is coalesced to keep long drags responsive.
 - The current-item countdown now includes animated GIF time. A second countdown shows the **remaining time in the selected playlist**, including timed stills. Durations are read asynchronously without playing those items. While scanning it shows *Calculating…*; an unreadable duration is marked *+ ?*, and missing/skipped files add no time. Repeat mode counts the remainder of the current pass and labels it accordingly. Both timers follow pause, seek and item changes.
 
