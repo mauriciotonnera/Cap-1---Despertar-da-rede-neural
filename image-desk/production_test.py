@@ -4,12 +4,23 @@ from array import array
 import json
 
 from qtpy import PYSIDE2
-from qtpy.QtCore import QPoint, Qt
+from qtpy.QtCore import QEvent, QPoint, QPointF, Qt
+from qtpy.QtGui import QMouseEvent
 from qtpy.QtTest import QTest
+from qtpy.QtWidgets import QApplication
 
 from audio_meter import pcm_peaks
 from playlist_data import PlaylistData
 from session import read_session
+
+
+def drag_to(widget, point):
+    # Qt 5's QTest.mouseMove only moves the platform cursor; the offscreen
+    # plugin never delivers that motion. Send the same real mouse-move event
+    # that a window receives, with the left button still held.
+    event = QMouseEvent(QEvent.Type.MouseMove, QPointF(point), Qt.MouseButton.NoButton,
+                        Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(widget, event)
 
 
 def run_checks(window, root, wait, until, checks):
@@ -100,7 +111,7 @@ def run_checks(window, root, wait, until, checks):
     QTest.mousePress(slider, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(width // 5, y))
     wait(180)
     first = p.last_frame.copy()
-    QTest.mouseMove(slider, QPoint(width * 3 // 5, y))
+    drag_to(slider, QPoint(width * 3 // 5, y))
     until(lambda: p.position > 1500)
     wait(180)
     assert window._seeking and not p.playing
@@ -112,7 +123,7 @@ def run_checks(window, root, wait, until, checks):
     c.start()
     until(lambda: p.playing and p.seekable)
     QTest.mousePress(slider, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(width // 4, y))
-    QTest.mouseMove(slider, QPoint(width // 2, y))
+    drag_to(slider, QPoint(width // 2, y))
     wait(150)
     assert c.paused and c.index == 0
     QTest.mouseRelease(slider, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(width // 2, y))
