@@ -61,7 +61,7 @@ def read_session(path):
     except (UnicodeError, json.JSONDecodeError) as error:
         raise ValueError("This is not a valid Image Desk session.") from error
     if (not isinstance(data, dict) or data.get("format") != "image-desk-session"
-            or type(data.get("version")) is not int or data["version"] not in (1, 2, 3)):
+            or type(data.get("version")) is not int or data["version"] not in (1, 2, 3, 4)):
         raise ValueError("Unsupported Image Desk session format.")
     settings = validate_settings(data.get("settings", {}))
     if data["version"] == 1:
@@ -82,6 +82,8 @@ def read_session(path):
                                           entry.get("volumes", [])))
         selected = data.get("selected_playlist", 0)
     validate_playlists(playlists, selected)
+    if data["version"] < 4 and any(v > 100 for entry in playlists for v in entry.volumes):
+        raise ValueError("Boosted item volumes require session format 4 (Image Desk 3.5 or later).")
     settings["still_seconds"] = playlists[selected].still_seconds
     settings["repeat_playlist"] = playlists[selected].repeat
     return playlists, selected, settings
@@ -112,7 +114,8 @@ def write_session(path, playlists, selected, settings):
         entries.append({"name": validated.name, "items": _write_items(validated.paths, path.parent),
                         "still_seconds": validated.still_seconds, "repeat": validated.repeat,
                         "volumes": validated.volumes})
-    data = {"format": "image-desk-session", "version": 3, "playlists": entries,
+    version = 4 if any(v > 100 for entry in playlists for v in entry.volumes) else 3
+    data = {"format": "image-desk-session", "version": version, "playlists": entries,
             "selected_playlist": selected, "settings": settings}
     payload = json.dumps(data, ensure_ascii=False, indent=2)
     if len(payload.encode("utf-8")) > 10_000_000:

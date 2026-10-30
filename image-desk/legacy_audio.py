@@ -12,6 +12,7 @@ from time import monotonic
 from qtpy.QtCore import QObject, QTimer, Qt, Signal
 from qtpy.QtMultimedia import QAudio, QAudioDeviceInfo, QAudioFormat, QAudioOutput
 from audio_meter import pcm_peaks
+from audio_gain import pcm_gain
 
 
 class LegacyAudio(QObject):
@@ -102,7 +103,7 @@ class LegacyAudio(QObject):
 
         @volume_type
         def volume(_opaque, value, muted):
-            # The Qt sink applies our linear item x master gain exactly once.
+            # Our PCM stage applies item x master exactly once, including boost.
             pass
 
         self.callbacks = (play, pause, resume, flush, drain, volume)
@@ -122,7 +123,11 @@ class LegacyAudio(QObject):
         if silent is not None:
             self.silent = silent
         if self.sink:
-            self.sink.setVolume(0 if self.silent or self.controls.isMuted() else self.controls.volume())
+            self.sink.setVolume(0 if self.silent or self.controls.isMuted() or self.controls.volume() == 0 else 1.0)
+
+    def render(self, data):
+        gain = 0.0 if self.silent or self.controls.isMuted() else self.controls.volume()
+        return pcm_gain(data, gain, "s16")
 
     def tick(self):
         with self.lock:
@@ -159,7 +164,8 @@ class LegacyAudio(QObject):
                         self.output_error = "The audio output device could not be opened."
                 size = min(len(data) - offset, max(0, self.sink.bytesFree())) if self.device else len(data) - offset
                 size -= size % 4
-                written = self.device.write(data[offset:offset + size]) if self.device and size else size
+                amplified = self.render(data[offset:offset + size]) if size else b""
+                written = self.device.write(amplified) if self.device and size else size
                 if written > 0:
                     levels = peaks
                     with self.lock:

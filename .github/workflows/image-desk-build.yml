@@ -1,4 +1,4 @@
-name: Build Image Desk 3.4 native apps
+name: Build Image Desk 3.5 native apps
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: python image-desk/verify_build.py
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-3.4-Windows-x64
+          name: ImageDesk-3.5-Windows-x64
           path: image-desk/dist/ImageDesk.exe
           if-no-files-found: error
 
@@ -42,8 +42,8 @@ jobs:
         run: ./image-desk/package_mac.sh Intel
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-3.4-macOS-Intel
-          path: image-desk/dist/ImageDesk-3.4-macOS-Intel.dmg
+          name: ImageDesk-3.5-macOS-Intel
+          path: image-desk/dist/ImageDesk-3.5-macOS-Intel.dmg
           if-no-files-found: error
 
   mac-apple-silicon:
@@ -61,8 +61,8 @@ jobs:
         run: ./image-desk/package_mac.sh Apple-Silicon
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-3.4-macOS-Apple-Silicon
-          path: image-desk/dist/ImageDesk-3.4-macOS-Apple-Silicon.dmg
+          name: ImageDesk-3.5-macOS-Apple-Silicon
+          path: image-desk/dist/ImageDesk-3.5-macOS-Apple-Silicon.dmg
           if-no-files-found: error
 
   windows-legacy:
@@ -84,7 +84,7 @@ jobs:
         run: python image-desk/verify_build.py --legacy
       - uses: actions/upload-artifact@v4
         with:
-          name: ImageDesk-3.4-Windows-Legacy-${{ matrix.arch }}
+          name: ImageDesk-3.5-Windows-Legacy-${{ matrix.arch }}
           path: image-desk/dist/ImageDesk-Legacy/
           if-no-files-found: error
       - name: Keep diagnostic reports when a check fails

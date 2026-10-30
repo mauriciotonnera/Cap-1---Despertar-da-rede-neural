@@ -1,4 +1,4 @@
-Image Desk 3.4 — Legacy Windows edition
+Image Desk 3.5 — Legacy Windows edition
 
 Target: Windows 7 SP1, Windows 8/8.1, Windows 10 and Windows 11.
 Choose x86 for 32-bit Windows; choose x64 for 64-bit Windows. The modern
@@ -20,7 +20,7 @@ Stereo audio meters, per-item volumes, live skimming, transport buttons and
 playlist remaining time are included. Version 3.4 adds Stop/rewind, live playlist
 editing and a silent next-item thumbnail beside the preview. Audio uses VLC decoding and a timestamped
 Qt 5 PCM output, so metering and output share the same audio samples.
-New sessions are interchangeable with Image Desk 3.3 and 3.4 builds. Sessions
+Sessions without boost are interchangeable with Image Desk 3.3 and 3.4 builds. Sessions
 from versions 3.0–3.2 still open, with each item defaulting to 100% volume.
 
 The legacy edition uses software video decoding so it does not depend on a
@@ -53,3 +53,7 @@ https://doc.qt.io/archives/qt-5.15/windows.html
 https://www.videolan.org/vlc/download-windows.html
 https://support.microsoft.com/help/2533623
 https://support.microsoft.com/help/2999226
+
+The compact item slider spans 0–200%, with 100% in the center and as the default.
+Software PCM gain supports real boost up to +6.02 dB, combined with master volume
+before saturation. Sessions with boosted items require Image Desk 3.5 or later.

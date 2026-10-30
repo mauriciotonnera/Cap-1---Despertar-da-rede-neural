@@ -166,6 +166,8 @@ def run(viewer_class, report_path):
             run_production_checks(window, root, wait, until, checks)
             from live_controls_test import run_checks as run_live_checks
             run_live_checks(window, root, wait, until, checks)
+            from gain_test import run_checks as run_gain_checks
+            run_gain_checks(window, root, wait, until, checks)
             assert not callback_errors, callback_errors
             # Windows decoders can retain the file handle after EndOfMedia.
             p.clear()

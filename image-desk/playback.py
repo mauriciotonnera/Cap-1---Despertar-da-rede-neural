@@ -6,12 +6,15 @@ from time import monotonic
 from qtpy import PYSIDE2
 from qtpy.QtCore import QObject, QTimer, QUrl, Qt, Signal
 from qtpy.QtGui import QImage, QMovie, QTransform
-from audio_meter import pcm_peaks
+from audio_gain import AudioControls
 
 if PYSIDE2:
-    from legacy_video import AudioOutput, VideoPlayer
+    from legacy_video import VideoPlayer
 else:
-    from qtpy.QtMultimedia import QAudioBufferOutput, QAudioFormat, QAudioOutput, QMediaMetaData, QMediaPlayer, QVideoSink
+    import os
+    os.environ["QT_MEDIA_BACKEND"] = "ffmpeg"  # PCM output is provided by this bundled backend.
+    from qtpy.QtMultimedia import QMediaMetaData, QMediaPlayer, QVideoSink
+    from modern_audio import ModernAudio
 
 
 VIDEO_SUFFIXES = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
@@ -38,16 +41,12 @@ class Playback(QObject):
         self.path = None
         self.player = None
         self.movie = None
-        self.audio = AudioOutput(self) if PYSIDE2 else QAudioOutput(self)
+        self.audio = AudioControls(self)
         self.audio.setVolume(0.8)
         self.master_volume, self.item_volume = 0.8, 1.0
         self.raw_levels = (0.0, 0.0)
         self._raw_at = 0.0
-        if PYSIDE2:
-            self.audio.changed.connect(self._emit_levels)
-        else:
-            self.audio.volumeChanged.connect(self._emit_levels)
-            self.audio.mutedChanged.connect(self._emit_levels)
+        self.audio.changed.connect(self._emit_levels)
         self.loop = False
         self.playing = False
         self.stopped = False
@@ -71,7 +70,7 @@ class Playback(QObject):
         self.audio.setVolume(self.master_volume * self.item_volume)
 
     def set_item_volume(self, value):
-        self.item_volume = max(0.0, min(1.0, float(value)))
+        self.item_volume = max(0.0, min(2.0, float(value)))
         self.audio.setVolume(self.master_volume * self.item_volume)
 
     def _emit_levels(self, *_args):
@@ -84,19 +83,6 @@ class Playback(QObject):
             self._raw_at = monotonic()
             self._emit_levels()
 
-    def _audio_buffer(self, player, buffer):
-        if player is not self.player:
-            return
-        if not buffer.isValid():
-            self._audio_peaks(player, (0.0, 0.0))
-            return
-        fmt = buffer.format()
-        formats = {QAudioFormat.SampleFormat.UInt8: "u8", QAudioFormat.SampleFormat.Int16: "s16",
-                   QAudioFormat.SampleFormat.Int32: "s32", QAudioFormat.SampleFormat.Float: "float"}
-        kind = formats.get(fmt.sampleFormat())
-        if kind and fmt.channelCount() > 0:
-            self._audio_peaks(player, pcm_peaks(buffer.constData(), fmt.channelCount(), kind))
-
     def clear(self):
         self.timer.stop()
         self.kind = "image"
@@ -105,6 +91,7 @@ class Playback(QObject):
             if PYSIDE2:
                 old.close()
             else:
+                old.audio_bridge.close()
                 old.stop()
                 old.setAudioBufferOutput(None)
                 old.setAudioOutput(None)
@@ -131,9 +118,10 @@ class Playback(QObject):
             return
         p = self.player = QMediaPlayer(self)
         sink = QVideoSink(p)
-        audio_tap = QAudioBufferOutput(p)
-        p.setAudioBufferOutput(audio_tap)
-        p.setAudioOutput(self.audio)
+        p.audio_bridge = ModernAudio(p, self.audio, p)
+        p.audio_bridge.peaks.connect(lambda levels: self._audio_peaks(p, levels))
+        p.audio_bridge.failed.connect(lambda text: self._video_error(p, text))
+        p.audio_bridge.drained.connect(lambda: self._modern_finished(p))
         p.setVideoSink(sink)
         p.setLoops(-1 if self.loop else 1)
         # A new player per file also prevents queued frames from an old file
@@ -141,7 +129,6 @@ class Playback(QObject):
         # Queue callbacks onto the GUI thread. Direct Python callbacks from the
         # decoder thread can deadlock a seek/stop while it waits for that thread.
         queued = Qt.ConnectionType.QueuedConnection
-        audio_tap.audioBufferReceived.connect(lambda buffer: self._audio_buffer(p, buffer), queued)
         sink.videoFrameChanged.connect(lambda frame: self._video_frame(p, frame), queued)
         p.playbackStateChanged.connect(lambda state: self._video_state(p, state), queued)
         p.positionChanged.connect(lambda value: self._video_position(p, value), queued)
@@ -212,6 +199,8 @@ class Playback(QObject):
 
     def pause(self):
         if self.kind == "video" and self.player:
+            if not PYSIDE2:
+                self.player.audio_bridge.pause()
             self.player.pause()
         elif self.kind == "gif":
             self._gif_remaining = max(1, self.timer.remainingTime())
@@ -225,8 +214,12 @@ class Playback(QObject):
         self.stopped = False
         if self.kind == "video" and self.player:
             if self.ended:
+                if not PYSIDE2:
+                    self.player.audio_bridge.seek(0)
                 self.player.setPosition(0)
             self.ended = False
+            if not PYSIDE2:
+                self.player.audio_bridge.resume()
             self.player.play()
         elif self.kind == "gif":
             if self.ended:
@@ -243,6 +236,9 @@ class Playback(QObject):
         self.ended = False
         self.stopped = False
         if self.kind == "video" and self.player:
+            if not PYSIDE2:
+                self.player.audio_bridge.seek(0)
+                self.player.audio_bridge.resume()
             self.player.setPosition(0)
             self.player.play()
         elif self.kind == "gif" and self.movie:
@@ -260,6 +256,8 @@ class Playback(QObject):
         self.playing = self.ended = False
         self.stopped = True
         if self.kind == "video" and self.player:
+            if not PYSIDE2:
+                self.player.audio_bridge.seek(0)
             self.player.setPosition(0)
         elif self.kind == "gif" and self.movie:
             self.timer.stop()
@@ -276,7 +274,10 @@ class Playback(QObject):
             return
         self.ended = False
         if self.kind == "video" and self.player:
-            self.player.setPosition(max(0, min(position, self.duration)))
+            target = max(0, min(position, self.duration))
+            if not PYSIDE2:
+                self.player.audio_bridge.seek(target)
+            self.player.setPosition(target)
         elif self.kind == "gif" and self.movie:
             self.timer.stop()
             self._gif_remaining = 0
@@ -350,6 +351,8 @@ class Playback(QObject):
 
     def _video_state(self, player, state):
         if player is self.player:
+            if state == QMediaPlayer.PlaybackState.StoppedState and player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
+                return  # Keep metering/automation live until the PCM tail drains.
             self.playing = state == QMediaPlayer.PlaybackState.PlayingState
             self.changed.emit()
 
@@ -373,6 +376,10 @@ class Playback(QObject):
         if player is not self.player:
             return
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            player.audio_bridge.finish()
+
+    def _modern_finished(self, player):
+        if player is self.player and player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
             self.ended, self.playing = True, False
             self.changed.emit()
 

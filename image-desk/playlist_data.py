@@ -32,8 +32,8 @@ class PlaylistData:
         if not self.volumes:
             self.volumes = [100] * len(self.paths)
         if (not isinstance(self.volumes, list) or len(self.volumes) != len(self.paths)
-                or any(type(v) is not int or not 0 <= v <= 100 for v in self.volumes)):
-            raise ValueError("Each playlist item needs a volume between 0 and 100 percent.")
+                or any(type(v) is not int or not 0 <= v <= 200 for v in self.volumes)):
+            raise ValueError("Each playlist item needs a volume between 0 and 200 percent.")
         if (type(self.still_seconds) not in (int, float) or not math.isfinite(self.still_seconds)
                 or not 0.5 <= self.still_seconds <= 3600):
             raise ValueError("Still-image duration must be between 0.5 and 3,600 seconds.")

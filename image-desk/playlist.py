@@ -213,7 +213,7 @@ class Playlist(QObject):
         return target
 
     def set_item_volume(self, row, value):
-        if not 0 <= row < len(self.paths) or type(value) is not int or not 0 <= value <= 100:
+        if not 0 <= row < len(self.paths) or type(value) is not int or not 0 <= value <= 200:
             return
         self.current_playlist.volumes[row] = value
         if self.selected_is_playing and not self.detached and row == self.index:

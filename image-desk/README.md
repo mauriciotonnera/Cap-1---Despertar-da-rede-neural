@@ -1,4 +1,4 @@
-# Image Desk 3.4
+# Image Desk 3.5
 
 Image Desk keeps a preview and file information on your main display, with a clean fullscreen view on a selected display. Version 3.0 adds mixed-media playlists, automatic playback, presentation blackout, a remaining-time display and portable saved sessions, keeping the original dark interface.
 
@@ -10,7 +10,7 @@ The modern Windows build requires Windows 10/11. The legacy build is a portable 
 
 ## Use the app
 
-Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 3.4 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
+Download the Windows executable or the Mac disk image from the latest successful **Build Image Desk 3.5 native apps** run. Extract the downloaded ZIP. On Windows, open `ImageDesk.exe`. On Mac, open the DMG and drag `ImageDesk.app` into Applications. The packaged apps do not require Python. Mac builds require macOS 13 or later; choose Intel or Apple Silicon to match your Mac.
 
 - Click **Open media…** or drop a file onto the window. Images, MP4, MOV and animated GIF files use the same preview and file-information panel.
 - Videos and animated GIFs start playing when opened. **Play once** stops and holds the final frame. **Loop** repeats the current file until you pause it or open another file. This choice also overrides the loop count embedded in a GIF and stays selected as you change files during the session.
@@ -47,7 +47,15 @@ The panel shows the playing playlist and current item. Adding files, reordering,
 
 Use **Open session…**, drop a session file onto the app, or pass it on the command line to reopen it. Loading a session restores all playlists and selects the saved one; it does not start playback or open fullscreen automatically. Missing files remain listed with a **missing** label so they can be identified and replaced. An invalid session leaves the current collection intact.
 
-Existing Image Desk 3.0/3.0.1 sessions open as one playlist named **Playlist 1**. Version 1 and 2 sessions retain their media and settings, with each item's volume defaulting to 100%. New sessions use format version 3 and require Image Desk 3.3 or later. Up to 100 playlists and 10,000 media entries in total can be saved in one session.
+Existing Image Desk 3.0/3.0.1 sessions open as one playlist named **Playlist 1**. Version 1 and 2 sessions retain their media and settings, with each item's volume defaulting to 100%. Sessions without boost use format version 3 (Image Desk 3.3 or later). Sessions with any item above 100% use format version 4 and require Image Desk 3.5 or later. Up to 100 playlists and 10,000 media entries in total can be saved in one session.
+
+## Item audio boost (3.5)
+
+- The compact item-volume slider spans **0–200%**. **100% is at the center**, and new entries still start at 100%. Existing saved levels retain their meaning.
+- Above 100%, software gain amplifies the decoded audio. **200% doubles amplitude (+6.02 dB)**. The amber **Boost** label identifies raised levels. Boost can clip already-loud audio; the output meter shows overload.
+- Item gain and the separate master volume combine before saturation: 200% item × 50% master = original level. Mute remains immediate. Source media files are never modified.
+- Both the modern Qt/FFmpeg and legacy VLC editions apply gain to actual PCM samples exactly once. Pause, seek, Stop and playlist changes flush or suspend their audio output appropriately.
+- Boosted sessions use format 4; sessions with all items at or below 100% remain format 3.
 
 ## Live controls and next preview (3.4)
 
@@ -60,7 +68,7 @@ Existing Image Desk 3.0/3.0.1 sessions open as one playlist named **Playlist 1**
 ## Audio monitoring and transport (3.3)
 
 - The stereo meter beside the main preview shows decoded **sample peaks in dBFS**, with a green/yellow/red scale, peak holds and full-scale indicators. Click it to reset peak holds. It follows item volume, master volume and mute, before the operating system's mixer. Mono appears on both bars; multichannel sources show front L/R in modern builds and the stereo mix in the legacy build. It is not a loudness (LUFS) or true-peak meter. The meter stays on the operator screen.
-- Select any playlist row to adjust **Item volume** from 0–100%. Each entry has its own value, even when the same file appears twice. Its percentage appears in the row. Changes to the playing entry take effect immediately; values follow entries when reordered and are saved in sessions. **Master** remains independent: 50% item × 80% master = 40% output. Opening standalone media resets its item volume to 100%.
+- Select any playlist row to adjust **Item volume** from 0–200%. Each entry has its own value, even when the same file appears twice. Its percentage appears in the row. Changes to the playing entry take effect immediately; values follow entries when reordered and are saved in sessions. **Master** remains independent: 50% item × 80% master = 40% output. Opening standalone media resets its item volume to 100%.
 - **Previous, Pause, Play, Stop, Restart and Next** use round icon buttons beneath the preview. They control the active playlist, including timed stills; otherwise they control the current file and its folder. Space still toggles play/pause.
 - Drag the playhead to **skim video frames during the drag**. Playback and playlist timing pause while dragging, then restore their previous play/pause state on release. The fullscreen output follows the same frames. Seeking is coalesced to keep long drags responsive.
 - The current-item countdown now includes animated GIF time. A second countdown shows the **remaining time in the selected playlist**, including timed stills. Durations are read asynchronously without playing those items. While scanning it shows *Calculating…*; an unreadable duration is marked *+ ?*, and missing/skipped files add no time. Repeat mode counts the remainder of the current pass and labels it accordingly. Both timers follow pause, seek and item changes.

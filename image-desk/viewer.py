@@ -1,4 +1,4 @@
-"""Image Desk 3.4: live playlist editing, transport and next-cue preview."""
+"""Image Desk 3.5: live playlist editing, transport and next-cue preview."""
 
 from __future__ import annotations
 
@@ -1081,7 +1081,7 @@ def main() -> int:
         return run(ViewerWindow, sys.argv[2])
     app = QApplication(sys.argv)
     app.setApplicationName("Image Desk")
-    app.setApplicationVersion("3.4")
+    app.setApplicationVersion("3.5")
     initial = Path(sys.argv[1]) if len(sys.argv) > 1 else None
     window = ViewerWindow(initial)
     window.show()

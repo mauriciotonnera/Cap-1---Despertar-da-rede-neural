@@ -30,6 +30,7 @@ if sys.platform == "win32":
 
 import vlc
 from legacy_audio import LegacyAudio
+from audio_gain import AudioControls as AudioOutput
 
 _instance = None
 
@@ -61,29 +62,6 @@ def instance():
         if _instance is None:
             raise ValueError("The bundled video decoder could not be started.")
     return _instance
-
-
-class AudioOutput(QObject):
-    changed = Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._volume = 0.8
-        self._muted = False
-
-    def setVolume(self, value):
-        self._volume = max(0.0, min(1.0, float(value)))
-        self.changed.emit()
-
-    def volume(self):
-        return self._volume
-
-    def setMuted(self, value):
-        self._muted = bool(value)
-        self.changed.emit()
-
-    def isMuted(self):
-        return self._muted
 
 
 class VideoPlayer(QObject):
@@ -191,8 +169,6 @@ class VideoPlayer(QObject):
 
     def _apply_audio(self):
         if not self._closed and self.audio_bridge:
-            self._player.audio_set_volume(round(self.audio.volume() * 100))
-            self._player.audio_set_mute(self.audio.isMuted() or self._pause_after_seek)
             self.audio_bridge.apply_volume(self._pause_after_seek)
 
     def hasAudio(self):
